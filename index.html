@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ThreatMind AI - Visual Threat Modeling Workspace</title>
+  <meta name="description" content="Interactive visual threat modeling tool supporting STRIDE, Attack Trees, and Security Control mitigations using local heuristics or LLMs.">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  
+  <header>
+    <div class="logo-container">
+      <div class="logo-icon">T</div>
+      <div class="logo-text">ThreatMind <span style="color: var(--color-primary);">AI</span></div>
+      <div class="logo-badge">Workspace</div>
+    </div>
+    
+    <div class="header-actions">
+      <button class="btn btn-secondary" id="btnShowAddThreatModal" style="display: none;">
+        + Add Custom Threat
+      </button>
+      <button class="btn btn-secondary btn-icon" id="btnSettings" title="API Credentials Configuration">
+        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+          <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+        </svg>
+      </button>
+      <button class="btn btn-accent" id="btnExport" style="display: none;">
+        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+        </svg>
+        Export Report
+      </button>
+    </div>
+  </header>
+
+  
+  <main>
+    
+    
+    <div class="sidebar">
+      <div class="card">
+        <div class="card-title">
+          <div class="card-title-left">
+            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+            </svg>
+            Project Details
+          </div>
+          <select id="savedSessions" class="session-select"></select>
+        </div>
+        
+        <div class="form-group">
+          <label class="form-label" for="projectName">Project Name</label>
+          <input type="text" id="projectName" class="form-input" placeholder="e.g. MyBank Gateway Portal" value="VaultSecure App">
+        </div>
+        
+        <div class="form-group">
+          <label class="form-label" for="projectDesc">Product Description</label>
+          <textarea id="projectDesc" class="form-textarea" placeholder="Describe capabilities, assets, user levels, and architecture..."></textarea>
+        </div>
+        
+        <div class="form-group">
+          <label class="form-label" for="projectIdea">Project Idea & Parameters</label>
+          <textarea id="projectIdea" class="form-textarea" placeholder="Specify unique constraints (e.g. PCI-DSS, local DB)..."></textarea>
+        </div>
+      </div>
+      
+      
+      <div class="card">
+        <div class="card-title">
+          <div class="card-title-left">
+            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
+            </svg>
+            Architecture Nodes
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="compSelector">Add Components</label>
+          <div style="display: flex; gap: 0.5rem;">
+            <select id="compSelector" class="form-select">
+              <option value="frontend">Web Frontend / Mobile App</option>
+              <option value="api">Backend API Server</option>
+              <option value="database">Database (SQL / NoSQL)</option>
+              <option value="auth">Auth Provider (OAuth/IdP)</option>
+              <option value="storage">Cloud Storage Buckets</option>
+            </select>
+            <button class="btn btn-primary" id="btnAddComp" style="padding: 0.5rem 1rem;">+</button>
+          </div>
+          <div class="component-tags-container" id="componentTags"></div>
+        </div>
+      </div>
+      
+      
+      <div class="card">
+        <div class="card-title">
+          <div class="card-title-left">
+            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+            </svg>
+            Architecture Diagram
+          </div>
+        </div>
+        <div class="upload-zone" id="uploadZone">
+          <input type="file" id="architectureFile" style="display: none;" accept="image/*">
+          <svg class="upload-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+          </svg>
+          <div class="upload-text" id="uploadText">
+            <span>Click to upload</span> or drag image here
+          </div>
+          <div class="preview-container" id="previewContainer">
+            <img src="" alt="Architecture Preview" class="preview-img" id="previewImg">
+            <button class="btn-remove-preview" id="btnRemovePreview" title="Remove image">&times;</button>
+          </div>
+        </div>
+      </div>
+      
+      <button class="btn btn-primary" id="btnGenerate" style="width: 100%; padding: 0.85rem;">
+        Generate Threat Model
+      </button>
+    </div>
+    
+    
+    <div class="content-area">
+      
+      
+      <div class="welcome-screen" id="welcomeScreen">
+        <svg class="welcome-icon" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+          <path d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"></path>
+        </svg>
+        <h2 class="welcome-title">ThreatMind AI</h2>
+        <p class="welcome-desc">
+          Automate security architecture analysis, STRIDE threat models, attack trees, and mitigation control strategies. Fill out your project's architectural details to start.
+        </p>
+        
+        <div class="feature-grid">
+          <div class="feature-box">
+            <h4>🛡️ STRIDE Mapping</h4>
+            <p>Spoofing, Tampering, Repudiation, Info Disclosure, Denial of Service, and Elevation of Privilege categorizations.</p>
+          </div>
+          <div class="feature-box">
+            <h4>🌿 Attack Trees</h4>
+            <p>Graphical representations of logical paths attackers can execute to compromise your system components.</p>
+          </div>
+          <div class="feature-box">
+            <h4>🎭 Abuse Cases</h4>
+            <p>Reverse-engineered user stories demonstrating operational patterns and real abuse mechanics.</p>
+          </div>
+          <div class="feature-box">
+            <h4>✅ Security Controls</h4>
+            <p>Actionable checklists mapped directly to STRIDE violations, serving as architectural acceptance tests.</p>
+          </div>
+        </div>
+      </div>
+      
+      
+      <div id="dashboardOutput" style="display: none;">
+        
+        <div class="tabs">
+          <button class="tab active" data-tab="stride">STRIDE Model</button>
+          <button class="tab" data-tab="tree">Attack Tree</button>
+          <button class="tab" data-tab="abuse">Abuse Cases</button>
+          <button class="tab" data-tab="risk">Risk Score</button>
+          <button class="tab" data-tab="controls">Security Controls</button>
+        </div>
+        
+        
+        <div class="dashboard-grid" id="tabContent" style="margin-top: 1.5rem;"></div>
+      </div>
+
+      
+      <div class="console-card">
+        <div class="console-header">
+          <span>Researcher Terminal Log Console</span>
+          <span style="font-size: 0.65rem; color: var(--text-dark); letter-spacing: 0.5px;">SYSTEM STATUS: ONLINE</span>
+        </div>
+        <div class="console-logs" id="consoleLogs"></div>
+      </div>
+
+    </div>
+  </main>
+
+  
+  <div class="modal-overlay" id="settingsModal">
+    <div class="modal-content">
+      <button class="modal-close" id="modalClose">&times;</button>
+      <h3 class="modal-title">AI Engine Settings</h3>
+      <form id="settingsForm">
+        <div class="form-group">
+          <label class="form-label" for="apiProvider">LLM Provider</label>
+          <select id="apiProvider" class="form-select">
+            <option value="gemini">Google Gemini AI</option>
+            <option value="openai">OpenAI GPT</option>
+          </select>
+        </div>
+        
+        <div class="form-group">
+          <label class="form-label" for="apiModel">Model Name</label>
+          <input type="text" id="apiModel" class="form-input" placeholder="e.g. gemini-1.5-flash or gpt-4o-mini">
+        </div>
+        
+        <div class="form-group">
+          <label class="form-label" for="apiKey">API Access Key</label>
+          <input type="password" id="apiKey" class="form-input" placeholder="Paste your API key (stored in local storage)">
+          <span style="font-size: 0.7rem; color: var(--text-dark); margin-top: 0.25rem; display: block;">
+            Leave key blank to use the smart local heuristics engine.
+          </span>
+        </div>
+        
+        <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 1rem;">
+          Save Configuration
+        </button>
+      </form>
+    </div>
+  </div>
+
+  
+  <div class="modal-overlay" id="addThreatModal">
+    <div class="modal-content" style="max-width: 600px;">
+      <button class="modal-close" id="addThreatModalClose">&times;</button>
+      <h3 class="modal-title">Add Custom Threat Vector</h3>
+      <form id="addThreatForm">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+          <div class="form-group">
+            <label class="form-label" for="customStride">STRIDE Category</label>
+            <select id="customStride" class="form-select">
+              <option value="S">Spoofing (S)</option>
+              <option value="T">Tampering (T)</option>
+              <option value="R">Repudiation (R)</option>
+              <option value="I">Information Disclosure (I)</option>
+              <option value="D">Denial of Service (D)</option>
+              <option value="E">Elevation of Privilege (E)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="customComponent">Target Component</label>
+            <input type="text" id="customComponent" class="form-input" placeholder="e.g. Auth Gateway" required>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="customTitle">Threat Title</label>
+          <input type="text" id="customTitle" class="form-input" placeholder="Brief descriptive summary" required>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+          <div class="form-group">
+            <label class="form-label" for="customLikelihood">Likelihood (1-3)</label>
+            <select id="customLikelihood" class="form-select">
+              <option value="1">Low (1)</option>
+              <option value="2">Medium (2)</option>
+              <option value="3">High (3)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="customImpact">Impact (1-3)</label>
+            <select id="customImpact" class="form-select">
+              <option value="1">Low (1)</option>
+              <option value="2">Medium (2)</option>
+              <option value="3">High (3)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="customDescription">Threat Description</label>
+          <textarea id="customDescription" class="form-textarea" placeholder="Detail how the vulnerability can be abused by attackers..." required></textarea>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="customMitigation">Security Control Mitigation</label>
+          <textarea id="customMitigation" class="form-textarea" placeholder="Detail specific engineering mitigations to defend the component..." required></textarea>
+        </div>
+
+        <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 0.5rem;">
+          Inject Threat into Model
+        </button>
+      </form>
+    </div>
+  </div>
+
+  
+  <div class="loading-overlay" id="loadingOverlay">
+    <div class="spinner"></div>
+    <div class="loading-text">ThreatMind AI Analysing Architecture...</div>
+    <p style="color: var(--text-muted); font-size: 0.8rem; max-width: 300px; text-align: center;">
+      Evaluating components schema mappings.
+    </p>
+  </div>
+
+  
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'dark',
+      themeVariables: {
+        background: '#0e111a',
+        primaryColor: '#10b981',
+        primaryTextColor: '#f3f4f6',
+        lineColor: '#374151',
+        secondaryColor: '#8b5cf6',
+        tertiaryColor: '#1f2937'
+      }
+    });
+    window.mermaid = mermaid;
+  </script>
+  
+  <script src="app.js"></script>
+</body>
+</html>
