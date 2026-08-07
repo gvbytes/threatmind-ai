@@ -10,8 +10,8 @@ const state = {
   abuseCases: [],
   controls: [],
   
-  apiProvider: 'gemini',
-  apiModel: 'gemini-1.5-flash',
+  apiProvider: 'Not available yet',
+  apiModel: 'Still the API mechanism is in Development',
   apiKey: '',
   
   activeTab: 'stride'
