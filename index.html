@@ -3,228 +3,251 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ThreatMind AI - Visual Threat Modeling Workspace</title>
-  <meta name="description" content="Interactive visual threat modeling tool supporting STRIDE, Attack Trees, and Security Control mitigations using local heuristics or LLMs.">
+  <title>ThreatMind AI - Security Threat Modeling & STRIDE Workbench</title>
+  <meta name="description" content="Automated STRIDE threat modeling, attack tree synthesis, and security control generation powered by NVIDIA NIM, local LLMs, and enterprise heuristics.">
   <link rel="stylesheet" href="styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 </head>
 <body>
 
-  
   <header>
     <div class="logo-container">
-      <div class="logo-icon">T</div>
-      <div class="logo-text">ThreatMind <span style="color: var(--color-primary);">AI</span></div>
-      <div class="logo-badge">Workspace</div>
+      <div class="logo-badge-icon">TM</div>
+      <div class="logo-text">ThreatMind <span>AI</span></div>
+      <div class="logo-tag">Threat Modeling Workbench</div>
     </div>
     
     <div class="header-actions">
+      <div class="provider-indicator" id="providerIndicator" title="Active Engine Configuration">
+        <span class="status-dot" id="statusDot"></span>
+        <span id="activeEngineText">Offline Heuristics</span>
+      </div>
+
       <button class="btn btn-secondary" id="btnShowAddThreatModal" style="display: none;">
-        + Add Custom Threat
+        + Custom Threat
       </button>
-      <button class="btn btn-secondary btn-icon" id="btnSettings" title="API Credentials Configuration">
-        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+
+      <button class="btn btn-secondary btn-icon" id="btnSettings" title="AI Engine & API Configuration">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
           <path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
           <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
         </svg>
       </button>
-      <button class="btn btn-accent" id="btnExport" style="display: none;">
-        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-          <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
-        </svg>
-        Export Report
-      </button>
+
+      <div class="dropdown" id="exportDropdown" style="display: none;">
+        <button class="btn btn-secondary" id="btnExportToggle">
+          <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+          </svg>
+          Export Report
+        </button>
+        <div class="dropdown-menu" id="exportMenu">
+          <button class="dropdown-item" id="exportMarkdown">Markdown (.md)</button>
+          <button class="dropdown-item" id="exportJSON">JSON (.json)</button>
+          <button class="dropdown-item" id="exportCSV">CSV (.csv)</button>
+        </div>
+      </div>
     </div>
   </header>
 
-  
   <main>
-    
-    
     <div class="sidebar">
       <div class="card">
         <div class="card-title">
-          <div class="card-title-left">
-            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-              <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-            </svg>
-            Project Details
-          </div>
-          <select id="savedSessions" class="session-select"></select>
+          <span>Project Scope</span>
+          <select id="savedSessions" class="form-select" style="width: auto; padding: 0.2rem 0.4rem; font-size: 0.72rem;"></select>
         </div>
         
         <div class="form-group">
-          <label class="form-label" for="projectName">Project Name</label>
-          <input type="text" id="projectName" class="form-input" placeholder="e.g. MyBank Gateway Portal" value="VaultSecure App">
+          <label class="form-label" for="projectName">Application / System Name</label>
+          <input type="text" id="projectName" class="form-input" placeholder="e.g. Payments Gateway Microservice" value="Payments Gateway">
         </div>
         
         <div class="form-group">
-          <label class="form-label" for="projectDesc">Product Description</label>
-          <textarea id="projectDesc" class="form-textarea" placeholder="Describe capabilities, assets, user levels, and architecture..."></textarea>
+          <label class="form-label" for="projectDesc">Architecture Overview</label>
+          <textarea id="projectDesc" class="form-textarea" placeholder="Describe components, data flow, trust boundaries, and user roles...">Multi-tenant payments processing service handling credit card transactions and merchant settlement via external banking APIs.</textarea>
         </div>
         
         <div class="form-group">
-          <label class="form-label" for="projectIdea">Project Idea & Parameters</label>
-          <textarea id="projectIdea" class="form-textarea" placeholder="Specify unique constraints (e.g. PCI-DSS, local DB)..."></textarea>
+          <label class="form-label" for="projectIdea">Security Constraints & Compliance</label>
+          <textarea id="projectIdea" class="form-textarea" placeholder="e.g. PCI-DSS compliance, zero-trust network, multi-region database...">Must meet PCI-DSS Level 1 requirements. Mutual TLS between internal microservices. Data encrypted at rest using KMS keys.</textarea>
         </div>
       </div>
       
-      
       <div class="card">
         <div class="card-title">
-          <div class="card-title-left">
-            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-              <path d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
-            </svg>
-            Architecture Nodes
-          </div>
+          <span>Architecture Nodes</span>
         </div>
         <div class="form-group">
-          <label class="form-label" for="compSelector">Add Components</label>
-          <div style="display: flex; gap: 0.5rem;">
+          <label class="form-label" for="compSelector">Select Component</label>
+          <div style="display: flex; gap: 0.4rem;">
             <select id="compSelector" class="form-select">
-              <option value="frontend">Web Frontend / Mobile App</option>
-              <option value="api">Backend API Server</option>
-              <option value="database">Database (SQL / NoSQL)</option>
-              <option value="auth">Auth Provider (OAuth/IdP)</option>
-              <option value="storage">Cloud Storage Buckets</option>
+              <option value="frontend">Web Frontend (SPA / React)</option>
+              <option value="mobile">Mobile Client (iOS / Android)</option>
+              <option value="api">API Gateway & Reverse Proxy</option>
+              <option value="microservice">Core Backend Microservice</option>
+              <option value="database">Relational Database (PostgreSQL / MySQL)</option>
+              <option value="nosql">NoSQL Database (MongoDB / DynamoDB)</option>
+              <option value="cache">In-Memory Cache (Redis)</option>
+              <option value="storage">Cloud Object Storage (S3 / Blob)</option>
+              <option value="auth">Identity Provider & Auth (OAuth2 / OIDC)</option>
+              <option value="queue">Message Broker (Kafka / RabbitMQ)</option>
+              <option value="llm">LLM & AI Agent Orchestrator</option>
             </select>
-            <button class="btn btn-primary" id="btnAddComp" style="padding: 0.5rem 1rem;">+</button>
+            <button class="btn btn-secondary" id="btnAddComp" style="padding: 0.45rem 0.75rem;">Add</button>
           </div>
           <div class="component-tags-container" id="componentTags"></div>
         </div>
       </div>
       
-      
       <div class="card">
         <div class="card-title">
-          <div class="card-title-left">
-            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-              <path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
-            </svg>
-            Architecture Diagram
-          </div>
+          <span>Architecture Diagram (Optional)</span>
         </div>
         <div class="upload-zone" id="uploadZone">
           <input type="file" id="architectureFile" style="display: none;" accept="image/*">
-          <svg class="upload-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+          <svg class="upload-icon" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
+            <path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
           </svg>
           <div class="upload-text" id="uploadText">
-            <span>Click to upload</span> or drag image here
+            <span>Choose diagram</span> or drag image here
           </div>
           <div class="preview-container" id="previewContainer">
-            <img src="" alt="Architecture Preview" class="preview-img" id="previewImg">
+            <img src="" alt="Architecture Diagram Preview" class="preview-img" id="previewImg">
             <button class="btn-remove-preview" id="btnRemovePreview" title="Remove image">&times;</button>
           </div>
         </div>
+        <span class="helper-text">Supports PNG, JPG, or SVG architecture diagrams for multimodal vision analysis.</span>
       </div>
       
-      <button class="btn btn-primary" id="btnGenerate" style="width: 100%; padding: 0.85rem;">
-        Generate Threat Model
+      <button class="btn btn-primary" id="btnGenerate" style="width: 100%; justify-content: center; padding: 0.65rem;">
+        Run Threat Analysis
       </button>
     </div>
     
-    
     <div class="content-area">
-      
-      
       <div class="welcome-screen" id="welcomeScreen">
-        <svg class="welcome-icon" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
-          <path d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"></path>
-        </svg>
-        <h2 class="welcome-title">ThreatMind AI</h2>
+        <h2 class="welcome-title">Security Threat Modeling Workspace</h2>
         <p class="welcome-desc">
-          Automate security architecture analysis, STRIDE threat models, attack trees, and mitigation control strategies. Fill out your project's architectural details to start.
+          Automate STRIDE threat modeling, synthesize hierarchical attack trees, model adversary abuse cases, and generate verifiable security acceptance criteria.
         </p>
         
         <div class="feature-grid">
           <div class="feature-box">
-            <h4>🛡️ STRIDE Mapping</h4>
-            <p>Spoofing, Tampering, Repudiation, Info Disclosure, Denial of Service, and Elevation of Privilege categorizations.</p>
+            <h4>STRIDE Classification</h4>
+            <p>Systematic categorizations across Spoofing, Tampering, Repudiation, Information Disclosure, Denial of Service, and Elevation of Privilege.</p>
           </div>
           <div class="feature-box">
-            <h4>🌿 Attack Trees</h4>
-            <p>Graphical representations of logical paths attackers can execute to compromise your system components.</p>
+            <h4>Attack Tree Synthesis</h4>
+            <p>Logical visualization of adversary compromise paths rendered directly using Mermaid.js graph syntax.</p>
           </div>
           <div class="feature-box">
-            <h4>🎭 Abuse Cases</h4>
-            <p>Reverse-engineered user stories demonstrating operational patterns and real abuse mechanics.</p>
+            <h4>Adversary Abuse Scenarios</h4>
+            <p>Concrete operational abuse patterns mapping threat actor motives to system vulnerabilities.</p>
           </div>
           <div class="feature-box">
-            <h4>✅ Security Controls</h4>
-            <p>Actionable checklists mapped directly to STRIDE violations, serving as architectural acceptance tests.</p>
+            <h4>Verification Controls</h4>
+            <p>Actionable architectural controls and testable mitigation checklists mapped directly to identified threats.</p>
           </div>
         </div>
       </div>
-      
       
       <div id="dashboardOutput" style="display: none;">
-        
         <div class="tabs">
-          <button class="tab active" data-tab="stride">STRIDE Model</button>
+          <button class="tab active" data-tab="stride">STRIDE Threats</button>
           <button class="tab" data-tab="tree">Attack Tree</button>
           <button class="tab" data-tab="abuse">Abuse Cases</button>
-          <button class="tab" data-tab="risk">Risk Score</button>
+          <button class="tab" data-tab="risk">Risk Scorecard</button>
           <button class="tab" data-tab="controls">Security Controls</button>
         </div>
+
+        <div id="tabFilters" class="filter-bar" style="margin-top: 1rem;">
+          <div class="filter-group">
+            <span style="font-size: 0.72rem; color: var(--text-faint); margin-right: 0.25rem;">STRIDE:</span>
+            <button class="filter-btn active" data-filter-stride="all">All</button>
+            <button class="filter-btn" data-filter-stride="S">S</button>
+            <button class="filter-btn" data-filter-stride="T">T</button>
+            <button class="filter-btn" data-filter-stride="R">R</button>
+            <button class="filter-btn" data-filter-stride="I">I</button>
+            <button class="filter-btn" data-filter-stride="D">D</button>
+            <button class="filter-btn" data-filter-stride="E">E</button>
+          </div>
+
+          <div class="filter-group">
+            <span style="font-size: 0.72rem; color: var(--text-faint); margin-right: 0.25rem;">Severity:</span>
+            <button class="filter-btn active" data-filter-severity="all">All</button>
+            <button class="filter-btn" data-filter-severity="critical">Critical</button>
+            <button class="filter-btn" data-filter-severity="high">High</button>
+            <button class="filter-btn" data-filter-severity="medium">Medium</button>
+            <button class="filter-btn" data-filter-severity="low">Low</button>
+          </div>
+        </div>
         
-        
-        <div class="dashboard-grid" id="tabContent" style="margin-top: 1.5rem;"></div>
+        <div id="tabContent" style="margin-top: 0.75rem;"></div>
       </div>
 
-      
       <div class="console-card">
         <div class="console-header">
-          <span>Researcher Terminal Log Console</span>
-          <span style="font-size: 0.65rem; color: var(--text-dark); letter-spacing: 0.5px;">SYSTEM STATUS: ONLINE</span>
+          <span>Security Analyst Terminal Log</span>
+          <span style="font-size: 0.65rem; color: var(--text-faint);">STATUS: READY</span>
         </div>
         <div class="console-logs" id="consoleLogs"></div>
       </div>
-
     </div>
   </main>
 
-  
+  <!-- AI Settings Modal -->
   <div class="modal-overlay" id="settingsModal">
     <div class="modal-content">
       <button class="modal-close" id="modalClose">&times;</button>
-      <h3 class="modal-title">AI Engine Settings</h3>
+      <h3 class="modal-title">AI Engine Configuration</h3>
       <form id="settingsForm">
         <div class="form-group">
-          <label class="form-label" for="apiProvider">LLM Provider</label>
+          <label class="form-label" for="apiProvider">Inference Provider</label>
           <select id="apiProvider" class="form-select">
+            <option value="nvidia">NVIDIA NIM (Free Credits at build.nvidia.com)</option>
+            <option value="groq">Groq Cloud (Ultra-Fast Free Tier)</option>
+            <option value="openrouter">OpenRouter (Free Models Available)</option>
             <option value="gemini">Google Gemini AI</option>
-            <option value="openai">OpenAI GPT</option>
+            <option value="openai">OpenAI</option>
+            <option value="ollama">Ollama (100% Offline & Private)</option>
+            <option value="custom">Custom OpenAI-Compatible API</option>
           </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="apiBaseUrl">API Base URL</label>
+          <input type="text" id="apiBaseUrl" class="form-input" placeholder="https://integrate.api.nvidia.com/v1">
         </div>
         
         <div class="form-group">
           <label class="form-label" for="apiModel">Model Name</label>
-          <input type="text" id="apiModel" class="form-input" placeholder="e.g. gemini-1.5-flash or gpt-4o-mini">
+          <input type="text" id="apiModel" class="form-input" placeholder="meta/llama-3.3-70b-instruct">
+          <span class="helper-text" id="modelHelpText">Recommended: meta/llama-3.3-70b-instruct or deepseek-ai/deepseek-r1</span>
         </div>
         
         <div class="form-group">
-          <label class="form-label" for="apiKey">API Access Key</label>
-          <input type="password" id="apiKey" class="form-input" placeholder="Paste your API key (stored in local storage)">
-          <span style="font-size: 0.7rem; color: var(--text-dark); margin-top: 0.25rem; display: block;">
-            Leave key blank to use the smart local heuristics engine.
+          <label class="form-label" for="apiKey">API Key</label>
+          <input type="password" id="apiKey" class="form-input" placeholder="Paste your API key">
+          <span class="helper-text">
+            Keys are stored strictly in your browser's local storage and never leave your machine. Leave blank to run the offline Heuristics Engine.
           </span>
         </div>
         
-        <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 1rem;">
-          Save Configuration
+        <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center; margin-top: 1rem;">
+          Save Settings
         </button>
       </form>
     </div>
   </div>
 
-  
+  <!-- Add Custom Threat Modal -->
   <div class="modal-overlay" id="addThreatModal">
-    <div class="modal-content" style="max-width: 600px;">
+    <div class="modal-content" style="max-width: 580px;">
       <button class="modal-close" id="addThreatModalClose">&times;</button>
-      <h3 class="modal-title">Add Custom Threat Vector</h3>
+      <h3 class="modal-title">Record Custom Threat</h3>
       <form id="addThreatForm">
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
           <div class="form-group">
             <label class="form-label" for="customStride">STRIDE Category</label>
             <select id="customStride" class="form-select">
@@ -244,72 +267,45 @@
 
         <div class="form-group">
           <label class="form-label" for="customTitle">Threat Title</label>
-          <input type="text" id="customTitle" class="form-input" placeholder="Brief descriptive summary" required>
+          <input type="text" id="customTitle" class="form-input" placeholder="Brief descriptive threat title" required>
         </div>
 
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+        <div class="form-group">
+          <label class="form-label" for="customDesc">Vulnerability Description</label>
+          <textarea id="customDesc" class="form-textarea" placeholder="Explain how the vulnerability manifests and what asset is at risk..." required></textarea>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
           <div class="form-group">
-            <label class="form-label" for="customLikelihood">Likelihood (1-3)</label>
+            <label class="form-label" for="customLikelihood">Likelihood (1 = Low, 3 = High)</label>
             <select id="customLikelihood" class="form-select">
-              <option value="1">Low (1)</option>
-              <option value="2">Medium (2)</option>
-              <option value="3">High (3)</option>
+              <option value="1">1 - Low</option>
+              <option value="2">2 - Medium</option>
+              <option value="3">3 - High</option>
             </select>
           </div>
           <div class="form-group">
-            <label class="form-label" for="customImpact">Impact (1-3)</label>
+            <label class="form-label" for="customImpact">Impact (1 = Low, 3 = High)</label>
             <select id="customImpact" class="form-select">
-              <option value="1">Low (1)</option>
-              <option value="2">Medium (2)</option>
-              <option value="3">High (3)</option>
+              <option value="1">1 - Low</option>
+              <option value="2">2 - Medium</option>
+              <option value="3">3 - High</option>
             </select>
           </div>
         </div>
 
         <div class="form-group">
-          <label class="form-label" for="customDescription">Threat Description</label>
-          <textarea id="customDescription" class="form-textarea" placeholder="Detail how the vulnerability can be abused by attackers..." required></textarea>
+          <label class="form-label" for="customMitigation">Mitigation Strategy</label>
+          <textarea id="customMitigation" class="form-textarea" placeholder="Specific technical countermeasure to neutralize this threat..." required></textarea>
         </div>
 
-        <div class="form-group">
-          <label class="form-label" for="customMitigation">Security Control Mitigation</label>
-          <textarea id="customMitigation" class="form-textarea" placeholder="Detail specific engineering mitigations to defend the component..." required></textarea>
-        </div>
-
-        <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 0.5rem;">
-          Inject Threat into Model
+        <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center; margin-top: 0.5rem;">
+          Add Threat Vector
         </button>
       </form>
     </div>
   </div>
 
-  
-  <div class="loading-overlay" id="loadingOverlay">
-    <div class="spinner"></div>
-    <div class="loading-text">ThreatMind AI Analysing Architecture...</div>
-    <p style="color: var(--text-muted); font-size: 0.8rem; max-width: 300px; text-align: center;">
-      Evaluating components schema mappings.
-    </p>
-  </div>
-
-  
-  <script type="module">
-    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
-    mermaid.initialize({
-      startOnLoad: false,
-      theme: 'dark',
-      themeVariables: {
-        background: '#0e111a',
-        primaryColor: '#10b981',
-        primaryTextColor: '#f3f4f6',
-        lineColor: '#374151',
-        secondaryColor: '#8b5cf6',
-        tertiaryColor: '#1f2937'
-      }
-    });
-    window.mermaid = mermaid;
-  </script>
-  
   <script src="app.js"></script>
 </body>
 </html>
