@@ -1,773 +1,1366 @@
-const state = {
-  projectName: '',
-  projectDescription: '',
-  projectIdea: '',
-  components: [],
-  diagramBase64: null,
-  
-  threats: [],
-  attackTree: '',
-  abuseCases: [],
-  controls: [],
-  
-  apiProvider: 'Not available yet',
-  apiModel: 'Still the API mechanism is in Development',
-  apiKey: '',
-  
-  activeTab: 'stride'
+/**
+ * ThreatMind AI - Threat Modeling & STRIDE Workbench
+ * Production Core Logic
+ */
+
+// Provider definitions & defaults
+const PROVIDER_CONFIGS = {
+  nvidia: {
+    name: 'NVIDIA NIM',
+    baseUrl: 'https://integrate.api.nvidia.com/v1',
+    defaultModel: 'meta/llama-3.3-70b-instruct',
+    helpText: 'Free credits available at build.nvidia.com. High performance on Llama-3.3-70B and DeepSeek-R1.',
+    isOpenAICompatible: true
+  },
+  groq: {
+    name: 'Groq Cloud',
+    baseUrl: 'https://api.groq.com/openai/v1',
+    defaultModel: 'llama-3.3-70b-versatile',
+    helpText: 'Ultra-fast inference with a generous free tier.',
+    isOpenAICompatible: true
+  },
+  openrouter: {
+    name: 'OpenRouter',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    defaultModel: 'meta-llama/llama-3.3-70b-instruct:free',
+    helpText: 'Free model tier available (meta-llama/llama-3.3-70b-instruct:free).',
+    isOpenAICompatible: true
+  },
+  gemini: {
+    name: 'Google Gemini',
+    baseUrl: 'https://generativelanguage.googleapis.com',
+    defaultModel: 'gemini-1.5-flash',
+    helpText: 'Google AI Studio API key. Native support for architecture image analysis.',
+    isOpenAICompatible: false
+  },
+  openai: {
+    name: 'OpenAI',
+    baseUrl: 'https://api.openai.com/v1',
+    defaultModel: 'gpt-4o-mini',
+    helpText: 'Official OpenAI API key.',
+    isOpenAICompatible: true
+  },
+  ollama: {
+    name: 'Ollama (Local / Private)',
+    baseUrl: 'http://localhost:11434/v1',
+    defaultModel: 'llama3.3',
+    helpText: '100% private, local threat modeling. Run "ollama run llama3.3" on your machine.',
+    isOpenAICompatible: true
+  },
+  custom: {
+    name: 'Custom OpenAI-Compatible',
+    baseUrl: 'http://localhost:8000/v1',
+    defaultModel: 'default-model',
+    helpText: 'Any vLLM, LocalAI, or custom OpenAI-compatible endpoint.',
+    isOpenAICompatible: true
+  }
+};
+
+const STRIDE_NAMES = {
+  S: 'Spoofing',
+  T: 'Tampering',
+  R: 'Repudiation',
+  I: 'Information Disclosure',
+  D: 'Denial of Service',
+  E: 'Elevation of Privilege'
 };
 
 const HEURISTICS = {
   frontend: {
-    name: 'Web Frontend / Mobile Client',
+    name: 'Web Frontend (SPA / React)',
     threats: [
       {
-        id: 'T-FE-1', stride: 'S',
-        title: 'Session Hijacking via Cookie Spoofing',
-        description: 'Attackers capture or guess session cookies to impersonate authentic users.',
+        stride: 'S',
+        title: 'Session Hijacking via Insecure Cookie Storage',
+        description: 'Session tokens stored in localStorage or cookies without HttpOnly/SameSite flags are susceptible to theft by malicious scripts.',
         likelihood: 2, impact: 3,
-        mitigation: 'Implement secure, httpOnly, and SameSite flags for all session cookies.'
+        mitigation: 'Store authentication tokens in HttpOnly, Secure, SameSite=Strict cookies; implement token rotation.'
       },
       {
-        id: 'T-FE-2', stride: 'T',
-        title: 'Cross-Site Scripting (XSS) on Input Fields',
-        description: 'Malicious scripts are injected into inputs and run in other users\' browsers.',
+        stride: 'T',
+        title: 'DOM-based Cross-Site Scripting (XSS)',
+        description: 'Unsanitized user-controlled URL fragments or inputs rendered directly into the DOM execute arbitrary client scripts.',
         likelihood: 3, impact: 2,
-        mitigation: 'Implement strict output encoding and configure a Content Security Policy (CSP).'
+        mitigation: 'Enforce strict output encoding, sanitize HTML with DOMPurify, and implement a rigid Content Security Policy (CSP).'
+      },
+      {
+        stride: 'T',
+        title: 'Subresource Integrity (SRI) Tampering',
+        description: 'Compromised third-party CDN scripts execute malicious code in the context of the user application.',
+        likelihood: 2, impact: 3,
+        mitigation: 'Enforce Subresource Integrity (SRI) hashes on all external assets and restrict CDN domains via CSP.'
       }
     ],
     abuseCases: [
       {
-        title: 'Malicious Script Execution',
-        actor: 'External Attacker',
-        scenario: 'Attacker injects a script tag in a post. When users view it, the script steals cookies.'
+        title: 'Stored XSS Token Exfiltration',
+        actor: 'External Adversary',
+        scenario: 'Attacker injects script payload into user profile. When an administrator inspects the profile, the script executes and exfiltrates the admin session.'
+      }
+    ]
+  },
+  mobile: {
+    name: 'Mobile Client (iOS / Android)',
+    threats: [
+      {
+        stride: 'I',
+        title: 'Insecure Local Data Storage',
+        description: 'Sensitive credentials, refresh tokens, or PII stored in unencrypted SharedPreferences / NSUserDefaults.',
+        likelihood: 2, impact: 3,
+        mitigation: 'Use platform keychains (Android EncryptedSharedPreferences / iOS Keychain Services) with biometric gates.'
+      },
+      {
+        stride: 'T',
+        title: 'Missing SSL / TLS Certificate Pinning',
+        description: 'Adversary installs a custom CA certificate on the mobile device to intercept and manipulate TLS traffic.',
+        likelihood: 2, impact: 3,
+        mitigation: 'Implement dynamic SSL Pinning for all API endpoints using Network Security Config or pinning libraries.'
+      }
+    ],
+    abuseCases: [
+      {
+        title: 'Man-In-The-Middle API Tampering',
+        actor: 'Local Network Attacker',
+        scenario: 'Attacker proxies mobile traffic through Burp Suite on a rooted device to alter transactional parameters before they hit the server.'
       }
     ]
   },
   api: {
-    name: 'API Gateway / Backend Server',
+    name: 'API Gateway & Reverse Proxy',
     threats: [
       {
-        id: 'T-API-1', stride: 'S',
-        title: 'API Client Impersonation',
-        description: 'Attackers craft requests pretending to be trusted services due to weak auth.',
+        stride: 'S',
+        title: 'JWT Algorithm Confusion & Spoofing',
+        description: 'API Gateway fails to enforce strict asymmetric algorithms (RS256 vs HS256), allowing forged token validation.',
         likelihood: 2, impact: 3,
-        mitigation: 'Implement Mutual TLS (mTLS) or secure JWT signature validation at the gateway.'
+        mitigation: 'Explicitly restrict accepted JWT algorithms in validator config; reject tokens signed with "none" or symmetric keys.'
       },
       {
-        id: 'T-API-2', stride: 'D',
-        title: 'API Rate Limiting Exhaustion',
-        description: 'Resource exhaustion via request flooding takes down backend instances.',
+        stride: 'D',
+        title: 'Distributed Rate-Limit Exhaustion',
+        description: 'Absence of token-bucket rate limiting permits resource exhaustion through high-frequency distributed API bursts.',
         likelihood: 3, impact: 2,
-        mitigation: 'Configure rate limiting rules (token bucket) at the API Gateway level.'
+        mitigation: 'Enforce IP-based and user-based token-bucket rate limits at the API Gateway level backed by Redis.'
       },
       {
-        id: 'T-API-3', stride: 'E',
-        title: 'Broken Object Level Authorization (IDOR)',
-        description: 'Users alter ID parameters in requests to access other users\' records.',
+        stride: 'E',
+        title: 'Broken Object Level Authorization (BOLA / IDOR)',
+        description: 'Endpoints expose sequential or predictable database keys without checking user ownership permissions.',
         likelihood: 3, impact: 3,
-        mitigation: 'Verify user ownership rights on every target object query.'
+        mitigation: 'Enforce strict tenancy and object ownership authorization checks on every data query.'
       }
     ],
     abuseCases: [
       {
-        title: 'Resource Scraping via API',
-        actor: 'Malicious User',
-        scenario: 'A user runs a script to scrape user profiles by incrementing request ID integers.'
+        title: 'Systematic Customer Record Scraping',
+        actor: 'Authenticated Malicious User',
+        scenario: 'User exploits BOLA by iterating over /api/v1/orders/{id} to harvest competitor transaction details.'
+      }
+    ]
+  },
+  microservice: {
+    name: 'Core Backend Microservice',
+    threats: [
+      {
+        stride: 'S',
+        title: 'Unauthenticated East-West Service Communication',
+        description: 'Internal microservice endpoints trust internal network packets without cryptographic verification.',
+        likelihood: 2, impact: 3,
+        mitigation: 'Enforce Mutual TLS (mTLS) with SPIFFE/SPIRE identities or signed internal service tokens.'
+      },
+      {
+        stride: 'D',
+        title: 'Cascading Dependency Failure',
+        description: 'Unbounded synchronous HTTP calls to internal services exhaust connection thread pools when one node fails.',
+        likelihood: 3, impact: 2,
+        mitigation: 'Implement circuit breakers (e.g. Resilience4j / Envoy), strict timeouts, and asynchronous message decoupling.'
+      }
+    ],
+    abuseCases: [
+      {
+        title: 'Lateral Movement Post-Pod Compromise',
+        actor: 'Compromised Microservice',
+        scenario: 'Attacker gains RCE on a public-facing service and uses the unsegmented internal network to query internal billing endpoints.'
       }
     ]
   },
   database: {
-    name: 'Database (SQL/NoSQL)',
+    name: 'Relational Database (SQL)',
     threats: [
       {
-        id: 'T-DB-1', stride: 'T',
-        title: 'SQL / NoSQL Query Injection',
-        description: 'Attackers manipulate query inputs to run arbitrary SQL statements.',
+        stride: 'T',
+        title: 'SQL Injection via Dynamic Concatenation',
+        description: 'Raw SQL statements dynamically concatenate user inputs, allowing arbitrary query execution.',
         likelihood: 2, impact: 3,
-        mitigation: 'Use parameterized queries, prepared statements, or ORMs.'
+        mitigation: 'Mandate parameterized queries, prepared statements, or strict typed ORMs across all queries.'
       },
       {
-        id: 'T-DB-2', stride: 'I',
-        title: 'Direct Database Exposure & Leakage',
-        description: 'Unencrypted backups or open ports expose raw data directly.',
+        stride: 'I',
+        title: 'Unencrypted Database Backups & Storage Volumes',
+        description: 'Database snapshot archives or disk volumes are stored without encryption at rest.',
         likelihood: 2, impact: 3,
-        mitigation: 'Enable at-rest encryption and disable database public network access.'
+        mitigation: 'Enable AES-256 transparent data encryption (TDE) for disks and encrypt backup dumps with KMS keys.'
+      },
+      {
+        stride: 'R',
+        title: 'Missing Immutable Audit Logging for Admin Queries',
+        description: 'Database administrative modifications are not forwarded to a tamper-proof centralized SIEM.',
+        likelihood: 2, impact: 2,
+        mitigation: 'Stream query audit logs (e.g. pgAudit) to append-only cloud storage with retention lock.'
       }
     ],
     abuseCases: [
       {
-        title: 'Database Schema Extraction',
-        actor: 'SQLi Attacker',
-        scenario: 'Attacker injects SQL union parameters to dump the system database schema.'
+        title: 'Blind SQL Injection Data Dump',
+        actor: 'External Attacker',
+        scenario: 'Attacker leverages time-based SQL injection on a search endpoint to reconstruct user credentials character by character.'
+      }
+    ]
+  },
+  nosql: {
+    name: 'NoSQL Database (MongoDB / DynamoDB)',
+    threats: [
+      {
+        stride: 'T',
+        title: 'NoSQL Operator Injection',
+        description: 'JSON request bodies pass operator keys ($gt, $ne, $where) directly into database query objects.',
+        likelihood: 2, impact: 3,
+        mitigation: 'Sanitize query inputs by casting all values to primitives and stripping MongoDB query operators.'
+      },
+      {
+        stride: 'E',
+        title: 'Schema-less Property Overwriting (Mass Assignment)',
+        description: 'Client payloads include administrative attributes (isAdmin, role) that are persisted directly without schema filtering.',
+        likelihood: 3, impact: 3,
+        mitigation: 'Use explicit DTOs and schema validators (Zod/Pydantic) to strictly reject unexpected properties.'
+      }
+    ],
+    abuseCases: [
+      {
+        title: 'Authentication Bypass via Operator Injection',
+        actor: 'Adversary',
+        scenario: 'Attacker submits {"username": "admin", "password": {"$ne": ""}} to bypass authentication logic.'
+      }
+    ]
+  },
+  cache: {
+    name: 'In-Memory Cache (Redis)',
+    threats: [
+      {
+        stride: 'T',
+        title: 'Cache Poisoning & SSRF Injection',
+        description: 'Unsanitized cache keys allow attackers to overwrite global shared state or inject malicious response bodies.',
+        likelihood: 2, impact: 3,
+        mitigation: 'Cryptographically hash or strictly sanitize cache key inputs; namespace all cache keys by tenant.'
+      },
+      {
+        stride: 'I',
+        title: 'Plaintext Cache Storage of Sensitive Records',
+        description: 'PII, session secrets, or tokens stored in cleartext in Redis without encryption or network auth.',
+        likelihood: 2, impact: 3,
+        mitigation: 'Enforce Redis ACL authentication, TLS transport encryption, and client-side encryption for sensitive objects.'
+      }
+    ],
+    abuseCases: [
+      {
+        title: 'Shared Cache De-synchronization',
+        actor: 'Malicious Tenant',
+        scenario: 'Attacker in a multi-tenant platform manipulates cache keys to poison the cached responses served to other tenants.'
+      }
+    ]
+  },
+  storage: {
+    name: 'Cloud Object Storage (S3 / Blob)',
+    threats: [
+      {
+        stride: 'I',
+        title: 'Public Bucket ACL Misconfiguration',
+        description: 'Object storage buckets configured with permissive read policies allow unauthenticated downloads of sensitive assets.',
+        likelihood: 2, impact: 3,
+        mitigation: 'Enable S3 Block Public Access globally, use pre-signed URLs with short lifespans (<=15 mins).'
+      },
+      {
+        stride: 'T',
+        title: 'Arbitrary File Overwrite & Path Traversal',
+        description: 'File upload endpoints permit user-supplied filenames containing path traversal characters ("../../").',
+        likelihood: 2, impact: 3,
+        mitigation: 'Generate randomized UUID keys for uploaded files; validate MIME types and file signatures server-side.'
+      }
+    ],
+    abuseCases: [
+      {
+        title: 'Unauthenticated PII Extraction via Open Bucket',
+        actor: 'Security Researcher / Attacker',
+        scenario: 'Attacker brute-forces company S3 bucket names using OSINT and dumps thousands of customer KYC document scans.'
+      }
+    ]
+  },
+  auth: {
+    name: 'Identity Provider & Auth (OAuth2 / OIDC)',
+    threats: [
+      {
+        stride: 'S',
+        title: 'OAuth2 Authorization Code Redirection Tampering',
+        description: 'Permissive redirect_uri validation allows attackers to steal authorization codes via open redirectors.',
+        likelihood: 2, impact: 3,
+        mitigation: 'Enforce exact string matching for redirect URIs and mandate PKCE (RFC 7636) for all clients.'
+      },
+      {
+        stride: 'S',
+        title: 'Credential Stuffing & Password Spraying',
+        description: 'Absence of account lockout and CAPTCHA enables automated credential stuffing attacks.',
+        likelihood: 3, impact: 3,
+        mitigation: 'Implement progressive delays, WebAuthn MFA, and breached credential checks (HaveIBeenPwned API).'
+      }
+    ],
+    abuseCases: [
+      {
+        title: 'Account Takeover via Weak Redirect URI',
+        actor: 'Phishing Attacker',
+        scenario: 'Attacker registers malicious URI subdomain, tricks user into OAuth flow, and captures authorization code to hijack account.'
+      }
+    ]
+  },
+  queue: {
+    name: 'Message Broker (Kafka / RabbitMQ)',
+    threats: [
+      {
+        stride: 'T',
+        title: 'Message Tampering without Signature Verification',
+        description: 'Consumers process asynchronous queue payloads without verifying message origin integrity.',
+        likelihood: 2, impact: 3,
+        mitigation: 'Sign message payloads using HMAC or asymmetric signatures; validate schema versions on consumption.'
+      },
+      {
+        stride: 'D',
+        title: 'Poison Pill Message Queue Hang',
+        description: 'Malformed payloads trigger uncaught consumer exceptions, causing infinite redelivery loops and consumer crash.',
+        likelihood: 3, impact: 2,
+        mitigation: 'Implement Dead Letter Queues (DLQ) with max retry counts and strict JSON schema validation.'
+      }
+    ],
+    abuseCases: [
+      {
+        title: 'Consumer Thread Starvation via Poison Messages',
+        actor: 'Internal Attacker',
+        scenario: 'Attacker pushes a payload that causes deserialization errors, blocking downstream queue partitions.'
+      }
+    ]
+  },
+  llm: {
+    name: 'LLM & AI Agent Orchestrator',
+    threats: [
+      {
+        stride: 'T',
+        title: 'Indirect Prompt Injection via External Content',
+        description: 'Untrusted user inputs, web search results, or retrieved documents contain adversarial instructions that hijack model execution.',
+        likelihood: 3, impact: 3,
+        mitigation: 'Isolate untrusted data inside XML delimiter boundaries, employ secondary guardrail models (Llama Guard), and restrict tool execution permissions.'
+      },
+      {
+        stride: 'E',
+        title: 'Excessive Agency & Unbounded Function Calling',
+        description: 'AI agent tools have unrestricted system access (shell, DB write, email) without human-in-the-loop confirmation.',
+        likelihood: 3, impact: 3,
+        mitigation: 'Require explicit human approval for destructive tools; enforce read-only scopes by default.'
+      },
+      {
+        stride: 'I',
+        title: 'System Prompt & Secret Exfiltration',
+        description: 'Adversarial jailbreaks manipulate the model into disclosing internal system prompts, API keys, or embedded RAG context.',
+        likelihood: 2, impact: 2,
+        mitigation: 'Sanitize RAG retrieval contexts; never put static API keys or master credentials in system prompt instructions.'
+      }
+    ],
+    abuseCases: [
+      {
+        title: 'Autonomous Data Exfiltration via Prompt Injection',
+        actor: 'Untrusted Document Author',
+        scenario: 'Attacker places hidden prompt injection instructions in an uploaded resume. When the AI agent parses it, the agent reads user data and calls an outbound webhook.'
       }
     ]
   }
 };
 
-document.addEventListener('DOMContentLoaded', () => {
-  initEventListeners();
-  loadApiConfig();
-  renderComponentTags();
-  updateSessionsDropdown();
-  logMessage("ThreatMind Workspace ready.", "success");
-});
+// Global state
+const state = {
+  projectName: 'Payments Gateway',
+  projectDescription: 'Multi-tenant payments processing service handling credit card transactions and merchant settlement via external banking APIs.',
+  projectIdea: 'Must meet PCI-DSS Level 1 requirements. Mutual TLS between internal microservices. Data encrypted at rest using KMS keys.',
+  components: ['frontend', 'api', 'microservice', 'database', 'storage', 'auth'],
+  diagramBase64: null,
 
-function logMessage(text, type = 'info') {
+  threats: [],
+  attackTree: '',
+  abuseCases: [],
+  controls: [],
+
+  apiProvider: 'nvidia',
+  apiModel: 'meta/llama-3.3-70b-instruct',
+  apiBaseUrl: 'https://integrate.api.nvidia.com/v1',
+  apiKey: '',
+
+  activeTab: 'stride',
+  strideFilter: 'all',
+  severityFilter: 'all',
+  searchQuery: ''
+};
+
+// Console logger
+function logToTerminal(message, type = 'info') {
   const container = document.getElementById('consoleLogs');
   if (!container) return;
-  const timestamp = new Date().toLocaleTimeString();
+
+  const timestamp = new Date().toISOString().substring(11, 19);
   const line = document.createElement('div');
-  line.className = `log-line log-${type}`;
-  line.innerText = `[${timestamp}] [${type.toUpperCase()}] ${text}`;
+  line.className = `log-${type}`;
+  line.textContent = `[${timestamp}] ${message}`;
+
   container.appendChild(line);
   container.scrollTop = container.scrollHeight;
 }
 
-function initEventListeners() {
-  const uploadZone = document.getElementById('uploadZone');
-  const fileInput = document.getElementById('architectureFile');
-  
-  uploadZone.addEventListener('click', () => fileInput.click());
-  uploadZone.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    uploadZone.style.borderColor = 'var(--color-primary)';
-  });
-  uploadZone.addEventListener('dragleave', () => {
-    uploadZone.style.borderColor = 'var(--border-color)';
-  });
-  uploadZone.addEventListener('drop', (e) => {
-    e.preventDefault();
-    uploadZone.style.borderColor = 'var(--border-color)';
-    if (e.dataTransfer.files.length > 0) {
-      handleFile(e.dataTransfer.files[0]);
-    }
-  });
-  
-  fileInput.addEventListener('change', (e) => {
-    if (e.target.files.length > 0) {
-      handleFile(e.target.files[0]);
-    }
-  });
-
-  document.getElementById('btnRemovePreview').addEventListener('click', (e) => {
-    e.stopPropagation();
-    state.diagramBase64 = null;
-    document.getElementById('previewContainer').style.display = 'none';
-    document.getElementById('uploadText').style.display = 'block';
-    fileInput.value = '';
-    logMessage("Architecture diagram removed.", "info");
-  });
-
-  document.getElementById('btnAddComp').addEventListener('click', () => {
-    const selector = document.getElementById('compSelector');
-    const compType = selector.value;
-    let mappedType = compType;
-    if (compType === 'auth' || compType === 'storage') mappedType = 'api';
-    
-    if (mappedType && !state.components.includes(mappedType)) {
-      state.components.push(mappedType);
-      renderComponentTags();
-      logMessage(`Added node: ${HEURISTICS[mappedType]?.name || mappedType}`, "info");
-    }
-  });
-
-  const settingsBtn = document.getElementById('btnSettings');
-  const settingsModal = document.getElementById('settingsModal');
-  const modalClose = document.getElementById('modalClose');
-  const settingsForm = document.getElementById('settingsForm');
-
-  settingsBtn.addEventListener('click', () => {
-    document.getElementById('apiProvider').value = state.apiProvider;
-    document.getElementById('apiModel').value = state.apiModel;
-    document.getElementById('apiKey').value = state.apiKey;
-    settingsModal.style.display = 'grid';
-  });
-
-  modalClose.addEventListener('click', () => {
-    settingsModal.style.display = 'none';
-  });
-
-  window.addEventListener('click', (e) => {
-    if (e.target === settingsModal) {
-      settingsModal.style.display = 'none';
-    }
-  });
-
-  settingsForm.addEventListener('submit', (e) => {
-    e.preventDefault();
-    state.apiProvider = document.getElementById('apiProvider').value;
-    state.apiModel = document.getElementById('apiModel').value.trim() || (state.apiProvider === 'gemini' ? 'gemini-1.5-flash' : 'gpt-4o-mini');
-    state.apiKey = document.getElementById('apiKey').value.trim();
-    saveApiConfig();
-    settingsModal.style.display = 'none';
-    logMessage(`Configured API: ${state.apiProvider.toUpperCase()} (${state.apiModel})`, "success");
-  });
-
-  document.getElementById('btnShowAddThreatModal').addEventListener('click', () => {
-    document.getElementById('addThreatModal').style.display = 'grid';
-  });
-
-  document.getElementById('addThreatModalClose').addEventListener('click', () => {
-    document.getElementById('addThreatModal').style.display = 'none';
-  });
-
-  document.getElementById('addThreatForm').addEventListener('submit', (e) => {
-    e.preventDefault();
-    const stride = document.getElementById('customStride').value;
-    const title = document.getElementById('customTitle').value.trim();
-    const component = document.getElementById('customComponent').value.trim();
-    const likelihood = parseInt(document.getElementById('customLikelihood').value);
-    const impact = parseInt(document.getElementById('customImpact').value);
-    const description = document.getElementById('customDescription').value.trim();
-    const mitigation = document.getElementById('customMitigation').value.trim();
-
-    const uniqueId = `T-CUST-${Math.floor(Math.random() * 10000)}`;
-    state.threats.push({
-      id: uniqueId, stride, title, description, component, likelihood, impact,
-      riskScore: likelihood * impact, mitigation
-    });
-
-    state.controls.push({
-      title: `Mitigate ${title}`,
-      description: mitigation,
-      checked: false,
-      threatMap: uniqueId
-    });
-
-    logMessage(`Added custom threat: "${title}"`, "success");
-    document.getElementById('addThreatModal').style.display = 'none';
-    document.getElementById('addThreatForm').reset();
-    renderTabContent();
-    saveCurrentSessionState();
-  });
-
-  document.getElementById('btnGenerate').addEventListener('click', () => {
-    state.projectName = document.getElementById('projectName').value.trim();
-    state.projectDescription = document.getElementById('projectDesc').value.trim();
-    state.projectIdea = document.getElementById('projectIdea').value.trim();
-
-    if (!state.projectName) {
-      alert('Please enter a Project Name.');
-      return;
-    }
-    generateThreatModel();
-  });
-
-  document.getElementById('savedSessions').addEventListener('change', (e) => {
-    if (e.target.value) {
-      loadSessionState(e.target.value);
-    }
-  });
-
-  document.querySelectorAll('.tab').forEach(tab => {
-    tab.addEventListener('click', () => {
-      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-      tab.classList.add('active');
-      state.activeTab = tab.dataset.tab;
-      renderTabContent();
-    });
-  });
-
-  document.getElementById('btnExport').addEventListener('click', () => {
-    exportToMarkdown();
-  });
+// Severity calculator
+function calculateSeverity(riskScore) {
+  if (riskScore >= 8) return 'critical';
+  if (riskScore >= 6) return 'high';
+  if (riskScore >= 4) return 'medium';
+  return 'low';
 }
 
-function handleFile(file) {
-  if (!file.type.startsWith('image/')) return;
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    state.diagramBase64 = e.target.result;
-    document.getElementById('previewImg').src = state.diagramBase64;
-    document.getElementById('previewContainer').style.display = 'block';
-    document.getElementById('uploadText').style.display = 'none';
-    logMessage("Uploaded architecture diagram.", "success");
-  };
-  reader.readAsDataURL(file);
+// Initialize application
+document.addEventListener('DOMContentLoaded', () => {
+  loadSavedSettings();
+  renderComponentTags();
+  updateProviderIndicator();
+  setupEventListeners();
+  setupMermaid();
+
+  logToTerminal('ThreatMind AI Workbench initialized.', 'success');
+  logToTerminal(`Engine: ${state.apiKey ? PROVIDER_CONFIGS[state.apiProvider]?.name : 'Offline Heuristics'}`, 'info');
+});
+
+function setupMermaid() {
+  if (window.mermaid) {
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'dark',
+      themeVariables: {
+        darkMode: true,
+        background: '#0f172a',
+        primaryColor: '#1e293b',
+        primaryTextColor: '#f8fafc',
+        primaryBorderColor: '#334155',
+        lineColor: '#64748b',
+        secondaryColor: '#1e293b',
+        tertiaryColor: '#0f172a'
+      }
+    });
+  }
+}
+
+function loadSavedSettings() {
+  const savedProvider = localStorage.getItem('tm_api_provider');
+  const savedModel = localStorage.getItem('tm_api_model');
+  const savedBaseUrl = localStorage.getItem('tm_api_base_url');
+  const savedKey = localStorage.getItem('tm_api_key');
+
+  if (savedProvider && PROVIDER_CONFIGS[savedProvider]) {
+    state.apiProvider = savedProvider;
+    state.apiModel = savedModel || PROVIDER_CONFIGS[savedProvider].defaultModel;
+    state.apiBaseUrl = savedBaseUrl || PROVIDER_CONFIGS[savedProvider].baseUrl;
+  }
+  if (savedKey) {
+    state.apiKey = savedKey;
+  }
+}
+
+function updateProviderIndicator() {
+  const indicator = document.getElementById('activeEngineText');
+  const dot = document.getElementById('statusDot');
+  if (!indicator || !dot) return;
+
+  if (state.apiKey) {
+    const p = PROVIDER_CONFIGS[state.apiProvider];
+    indicator.textContent = `${p?.name || state.apiProvider} (${state.apiModel})`;
+    dot.style.background = 'var(--accent-primary)';
+  } else {
+    indicator.textContent = 'Offline Heuristics Engine';
+    dot.style.background = 'var(--severity-low)';
+  }
 }
 
 function renderComponentTags() {
   const container = document.getElementById('componentTags');
+  if (!container) return;
+
   container.innerHTML = '';
-  state.components.forEach(comp => {
+  state.components.forEach(compKey => {
+    const compData = HEURISTICS[compKey];
+    if (!compData) return;
+
     const tag = document.createElement('div');
     tag.className = 'component-tag';
     tag.innerHTML = `
-      <span>${HEURISTICS[comp]?.name || comp}</span>
-      <button onclick="removeComponent('${comp}')">&times;</button>
+      <span>${compData.name}</span>
+      <span class="component-tag-remove" data-key="${compKey}">&times;</span>
     `;
     container.appendChild(tag);
   });
+
+  // Attach removal listeners
+  container.querySelectorAll('.component-tag-remove').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const key = e.target.getAttribute('data-key');
+      state.components = state.components.filter(c => c !== key);
+      renderComponentTags();
+    });
+  });
 }
 
-window.removeComponent = function(comp) {
-  state.components = state.components.filter(c => c !== comp);
-  renderComponentTags();
-  logMessage(`Removed component: ${HEURISTICS[comp]?.name || comp}`, "info");
-};
+function setupEventListeners() {
+  // Add component button
+  const btnAddComp = document.getElementById('btnAddComp');
+  const compSelector = document.getElementById('compSelector');
+  if (btnAddComp && compSelector) {
+    btnAddComp.addEventListener('click', () => {
+      const selected = compSelector.value;
+      if (selected && !state.components.includes(selected)) {
+        state.components.push(selected);
+        renderComponentTags();
+      }
+    });
+  }
 
-function saveApiConfig() {
-  localStorage.setItem('threatmind_provider', state.apiProvider);
-  localStorage.setItem('threatmind_model', state.apiModel);
-  localStorage.setItem('threatmind_key', state.apiKey);
-}
+  // Diagram upload
+  const uploadZone = document.getElementById('uploadZone');
+  const architectureFile = document.getElementById('architectureFile');
+  const previewContainer = document.getElementById('previewContainer');
+  const previewImg = document.getElementById('previewImg');
+  const btnRemovePreview = document.getElementById('btnRemovePreview');
+  const uploadText = document.getElementById('uploadText');
 
-function loadApiConfig() {
-  const provider = localStorage.getItem('threatmind_provider');
-  const model = localStorage.getItem('threatmind_model');
-  const key = localStorage.getItem('threatmind_key');
-  if (provider) state.apiProvider = provider;
-  if (model) state.apiModel = model;
-  if (key) state.apiKey = key;
-}
+  if (uploadZone && architectureFile) {
+    uploadZone.addEventListener('click', (e) => {
+      if (e.target !== btnRemovePreview) architectureFile.click();
+    });
 
-async function generateThreatModel() {
-  document.getElementById('loadingOverlay').style.display = 'flex';
-  logMessage(`Analyzing security parameters for: ${state.projectName}`, "info");
-  
-  try {
-    if (state.apiKey) {
-      logMessage("Contacting external LLM Service...", "info");
-      await generateThreatModelWithAI();
-    } else {
-      logMessage("Using offline rule matcher...", "info");
-      await new Promise(resolve => setTimeout(resolve, 800));
-      generateThreatModelWithHeuristics();
+    architectureFile.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+          state.diagramBase64 = evt.target.result;
+          previewImg.src = evt.target.result;
+          previewContainer.style.display = 'block';
+          uploadText.style.display = 'none';
+          logToTerminal(`Loaded architecture diagram: ${file.name} (${Math.round(file.size / 1024)} KB)`, 'info');
+        };
+        reader.readAsDataURL(file);
+      }
+    });
+
+    btnRemovePreview.addEventListener('click', (e) => {
+      e.stopPropagation();
+      state.diagramBase64 = null;
+      architectureFile.value = '';
+      previewContainer.style.display = 'none';
+      uploadText.style.display = 'block';
+    });
+  }
+
+  // Settings Modal
+  const btnSettings = document.getElementById('btnSettings');
+  const settingsModal = document.getElementById('settingsModal');
+  const modalClose = document.getElementById('modalClose');
+  const settingsForm = document.getElementById('settingsForm');
+  const apiProviderSelect = document.getElementById('apiProvider');
+  const apiBaseUrlInput = document.getElementById('apiBaseUrl');
+  const apiModelInput = document.getElementById('apiModel');
+  const apiKeyInput = document.getElementById('apiKey');
+  const modelHelpText = document.getElementById('modelHelpText');
+
+  if (btnSettings && settingsModal) {
+    btnSettings.addEventListener('click', () => {
+      apiProviderSelect.value = state.apiProvider;
+      apiBaseUrlInput.value = state.apiBaseUrl;
+      apiModelInput.value = state.apiModel;
+      apiKeyInput.value = state.apiKey;
+      updateModelHelp();
+      settingsModal.style.display = 'grid';
+    });
+
+    modalClose.addEventListener('click', () => {
+      settingsModal.style.display = 'none';
+    });
+
+    apiProviderSelect.addEventListener('change', () => {
+      const p = PROVIDER_CONFIGS[apiProviderSelect.value];
+      if (p) {
+        apiBaseUrlInput.value = p.baseUrl;
+        apiModelInput.value = p.defaultModel;
+        updateModelHelp();
+      }
+    });
+
+    function updateModelHelp() {
+      const p = PROVIDER_CONFIGS[apiProviderSelect.value];
+      if (p && modelHelpText) {
+        modelHelpText.textContent = p.helpText;
+      }
     }
-    
-    logMessage(`Found ${state.threats.length} threats.`, "warning");
-    
-    document.getElementById('welcomeScreen').style.display = 'none';
-    document.getElementById('dashboardOutput').style.display = 'block';
-    document.getElementById('btnExport').style.display = 'inline-flex';
-    document.getElementById('btnShowAddThreatModal').style.display = 'inline-flex';
-    
-    renderTabContent();
-    saveCurrentSessionState();
-  } catch (error) {
-    logMessage(`Analysis error: ${error.message}`, "error");
-    alert('Error generating model: ' + error.message);
-  } finally {
-    document.getElementById('loadingOverlay').style.display = 'none';
+
+    settingsForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      state.apiProvider = apiProviderSelect.value;
+      state.apiBaseUrl = apiBaseUrlInput.value.trim();
+      state.apiModel = apiModelInput.value.trim();
+      state.apiKey = apiKeyInput.value.trim();
+
+      localStorage.setItem('tm_api_provider', state.apiProvider);
+      localStorage.setItem('tm_api_base_url', state.apiBaseUrl);
+      localStorage.setItem('tm_api_model', state.apiModel);
+      localStorage.setItem('tm_api_key', state.apiKey);
+
+      updateProviderIndicator();
+      settingsModal.style.display = 'none';
+      logToTerminal(`Updated AI engine settings: ${state.apiProvider} (${state.apiModel})`, 'success');
+    });
+  }
+
+  // Add Custom Threat Modal
+  const btnShowAddThreat = document.getElementById('btnShowAddThreatModal');
+  const addThreatModal = document.getElementById('addThreatModal');
+  const addThreatClose = document.getElementById('addThreatModalClose');
+  const addThreatForm = document.getElementById('addThreatForm');
+
+  if (btnShowAddThreat && addThreatModal) {
+    btnShowAddThreat.addEventListener('click', () => {
+      addThreatModal.style.display = 'grid';
+    });
+
+    addThreatClose.addEventListener('click', () => {
+      addThreatModal.style.display = 'none';
+    });
+
+    addThreatForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const stride = document.getElementById('customStride').value;
+      const component = document.getElementById('customComponent').value.trim();
+      const title = document.getElementById('customTitle').value.trim();
+      const description = document.getElementById('customDesc').value.trim();
+      const likelihood = parseInt(document.getElementById('customLikelihood').value, 10);
+      const impact = parseInt(document.getElementById('customImpact').value, 10);
+      const mitigation = document.getElementById('customMitigation').value.trim();
+
+      const uniqueId = `T-CUSTOM-${Date.now().toString().slice(-4)}`;
+      const riskScore = likelihood * impact;
+
+      const newThreat = {
+        id: uniqueId,
+        stride,
+        title,
+        description,
+        component,
+        likelihood,
+        impact,
+        riskScore,
+        mitigation
+      };
+
+      state.threats.unshift(newThreat);
+      state.controls.push({
+        title: `Mitigate ${title}`,
+        description: mitigation,
+        checked: false,
+        threatMap: uniqueId
+      });
+
+      addThreatModal.style.display = 'none';
+      addThreatForm.reset();
+      renderActiveTab();
+      logToTerminal(`Added custom threat vector: ${title} (${uniqueId})`, 'info');
+    });
+  }
+
+  // Tabs navigation
+  document.querySelectorAll('.tab').forEach(tabBtn => {
+    tabBtn.addEventListener('click', (e) => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      tabBtn.classList.add('active');
+      state.activeTab = tabBtn.getAttribute('data-tab');
+      renderActiveTab();
+    });
+  });
+
+  // Filter buttons
+  document.querySelectorAll('[data-filter-stride]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('[data-filter-stride]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      state.strideFilter = btn.getAttribute('data-filter-stride');
+      renderActiveTab();
+    });
+  });
+
+  document.querySelectorAll('[data-filter-severity]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('[data-filter-severity]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      state.severityFilter = btn.getAttribute('data-filter-severity');
+      renderActiveTab();
+    });
+  });
+
+  // Export Dropdown
+  const btnExportToggle = document.getElementById('btnExportToggle');
+  const exportMenu = document.getElementById('exportMenu');
+  if (btnExportToggle && exportMenu) {
+    btnExportToggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      exportMenu.style.display = exportMenu.style.display === 'block' ? 'none' : 'block';
+    });
+
+    document.addEventListener('click', () => {
+      exportMenu.style.display = 'none';
+    });
+
+    document.getElementById('exportMarkdown')?.addEventListener('click', () => exportReport('markdown'));
+    document.getElementById('exportJSON')?.addEventListener('click', () => exportReport('json'));
+    document.getElementById('exportCSV')?.addEventListener('click', () => exportReport('csv'));
+  }
+
+  // Run Threat Analysis Button
+  const btnGenerate = document.getElementById('btnGenerate');
+  if (btnGenerate) {
+    btnGenerate.addEventListener('click', runThreatAnalysis);
   }
 }
 
-function generateThreatModelWithHeuristics() {
-  const selectedComps = state.components.length > 0 ? state.components : ['frontend', 'api', 'database'];
+// Main generation pipeline
+async function runThreatAnalysis() {
+  const btnGenerate = document.getElementById('btnGenerate');
+  const projectNameInput = document.getElementById('projectName');
+  const projectDescInput = document.getElementById('projectDesc');
+  const projectIdeaInput = document.getElementById('projectIdea');
+
+  state.projectName = projectNameInput.value.trim() || 'Untitled System';
+  state.projectDescription = projectDescInput.value.trim();
+  state.projectIdea = projectIdeaInput.value.trim();
+
+  if (state.components.length === 0) {
+    logToTerminal('Please add at least one architecture node to audit.', 'warning');
+    return;
+  }
+
+  btnGenerate.disabled = true;
+  btnGenerate.textContent = 'Running Security Audit...';
+  logToTerminal(`Beginning threat model synthesis for "${state.projectName}"...`, 'info');
+
+  try {
+    if (state.apiKey) {
+      await generateThreatModelWithAI();
+    } else {
+      generateThreatModelOffline();
+    }
+
+    // Display dashboard
+    document.getElementById('welcomeScreen').style.display = 'none';
+    document.getElementById('dashboardOutput').style.display = 'block';
+    document.getElementById('btnShowAddThreatModal').style.display = 'inline-flex';
+    document.getElementById('exportDropdown').style.display = 'inline-block';
+
+    renderActiveTab();
+    logToTerminal(`Threat model ready: ${state.threats.length} threats, ${state.abuseCases.length} abuse cases, ${state.controls.length} controls.`, 'success');
+  } catch (error) {
+    logToTerminal(`Threat analysis failed: ${error.message}`, 'error');
+    console.error(error);
+  } finally {
+    btnGenerate.disabled = false;
+    btnGenerate.textContent = 'Run Threat Analysis';
+  }
+}
+
+// Offline heuristic generator
+function generateThreatModelOffline() {
+  logToTerminal('Using offline heuristic rules engine.', 'info');
   state.threats = [];
   state.abuseCases = [];
   state.controls = [];
 
-  selectedComps.forEach(compKey => {
+  state.components.forEach(compKey => {
     const compData = HEURISTICS[compKey];
     if (!compData) return;
 
-    compData.threats.forEach(t => {
-      const uniqueId = `T-${compKey.toUpperCase()}-${Math.floor(Math.random() * 1000)}`;
+    compData.threats.forEach((t, idx) => {
+      const uniqueId = `T-${compKey.toUpperCase()}-${idx + 1}`;
+      const riskScore = t.likelihood * t.impact;
+
       state.threats.push({
-        id: uniqueId, stride: t.stride, title: t.title, description: t.description,
-        component: compData.name, likelihood: t.likelihood, impact: t.impact,
-        riskScore: t.likelihood * t.impact, mitigation: t.mitigation
+        id: uniqueId,
+        stride: t.stride,
+        title: t.title,
+        description: t.description,
+        component: compData.name,
+        likelihood: t.likelihood,
+        impact: t.impact,
+        riskScore: riskScore,
+        mitigation: t.mitigation
       });
 
       state.controls.push({
-        title: `Mitigate ${t.title}`, description: t.mitigation,
-        checked: false, threatMap: uniqueId
+        title: `Mitigate ${t.title}`,
+        description: t.mitigation,
+        checked: false,
+        threatMap: uniqueId
       });
     });
 
     compData.abuseCases.forEach(ac => {
       state.abuseCases.push({
-        title: ac.title, actor: ac.actor, scenario: ac.scenario
+        title: ac.title,
+        actor: ac.actor,
+        scenario: ac.scenario
       });
     });
   });
 
-  state.attackTree = generateMermaidTree(selectedComps);
+  state.attackTree = generateMermaidTree();
 }
 
-function generateMermaidTree(selectedComps) {
+// Mermaid tree generator
+function generateMermaidTree() {
   let tree = 'graph TD\n';
-  tree += `  Root["Compromise ${state.projectName}"] --> FE["Web Frontend"]\n`;
-  if (selectedComps.includes('api')) {
-    tree += `  Root --> API["Backend API Service"]\n`;
-    tree += `  FE --> API\n`;
-  }
-  if (selectedComps.includes('database')) {
-    tree += `  Root --> DB[("Database Server")]\n`;
-    if (selectedComps.includes('api')) tree += `  API --> DB\n`;
-    else tree += `  FE --> DB\n`;
-  }
+  tree += `  Target["Compromise ${state.projectName}"]\n`;
+
+  state.components.forEach(compKey => {
+    const compData = HEURISTICS[compKey];
+    if (!compData) return;
+
+    const compNodeId = compKey.toUpperCase();
+    tree += `  Target --> ${compNodeId}["${compData.name}"]\n`;
+
+    const threats = compData.threats.slice(0, 2);
+    threats.forEach((t, idx) => {
+      const threatNodeId = `${compNodeId}_T${idx}`;
+      tree += `  ${compNodeId} --> ${threatNodeId}["[${t.stride}] ${t.title}"]\n`;
+    });
+  });
+
   return tree;
 }
 
+// AI generation pipeline (NVIDIA NIM / Groq / OpenRouter / Gemini / OpenAI / Ollama)
 async function generateThreatModelWithAI() {
+  const provider = state.apiProvider;
+  const config = PROVIDER_CONFIGS[provider] || PROVIDER_CONFIGS.custom;
   const componentNames = state.components.map(c => HEURISTICS[c]?.name || c).join(', ');
-  
-  const systemPrompt = `You are ThreatMind AI. Generate a security threat model in JSON format.
-  Input details:
-  Project: ${state.projectName}
-  Description: ${state.projectDescription}
-  Components: ${componentNames}
-  Parameters: ${state.projectIdea}
 
-  Response must be strict JSON output without markdown blocks. Schema:
-  {
-    "threats": [{"id": "unique-id", "stride": "S"|"T"|"R"|"I"|"D"|"E", "title": "...", "description": "...", "component": "...", "likelihood": 1-3, "impact": 1-3, "riskScore": 1-9, "mitigation": "..."}],
-    "attackTree": "Valid Mermaid.js graph code",
-    "abuseCases": [{"title": "...", "actor": "...", "scenario": "..."}],
-    "controls": [{"title": "Mitigation Title", "description": "...", "threatMap": "associated threat id"}]
-  }`;
+  logToTerminal(`Connecting to ${config.name} (${state.apiModel})...`, 'info');
 
-  let responseText = '';
-  
-  if (state.apiProvider === 'gemini') {
-    const url = `https://generativelanguage.googleapis.com/v1/models/${state.apiModel}:generateContent?key=${state.apiKey}`;
-    const response = await fetch(url, {
+  const systemInstruction = `You are a Principal Security Architect and Threat Modeling Expert.
+Generate an exhaustive STRIDE threat model, hierarchical Mermaid.js attack tree, adversary abuse scenarios, and verifiable security controls.
+
+Target Project: ${state.projectName}
+System Overview: ${state.projectDescription}
+Components: ${componentNames}
+Compliance & Constraints: ${state.projectIdea}
+
+You must return ONLY a single valid JSON object with no markdown backticks, no commentary, and no trailing text.
+JSON Schema:
+{
+  "threats": [
+    {
+      "id": "T-01",
+      "stride": "S" | "T" | "R" | "I" | "D" | "E",
+      "title": "Clear Threat Vector Title",
+      "description": "Technical description of vulnerability and asset at risk",
+      "component": "Component Name",
+      "likelihood": 1, 2, or 3,
+      "impact": 1, 2, or 3,
+      "riskScore": likelihood * impact,
+      "mitigation": "Prescriptive technical remediation"
+    }
+  ],
+  "attackTree": "graph TD\\n  Root[\\\"Compromise System\\\"] --> NodeA[\\\"...\"]",
+  "abuseCases": [
+    {
+      "title": "Abuse Case Title",
+      "actor": "Threat Actor Profile",
+      "scenario": "Step-by-step adversary execution mechanics"
+    }
+  ],
+  "controls": [
+    {
+      "title": "Control Title",
+      "description": "Verification acceptance criteria",
+      "threatMap": "T-01"
+    }
+  ]
+}`;
+
+  let rawOutput = '';
+
+  if (provider === 'gemini') {
+    // Gemini generateContent API
+    const url = `${state.apiBaseUrl}/v1beta/models/${state.apiModel}:generateContent?key=${state.apiKey}`;
+    const parts = [{ text: systemInstruction }];
+
+    if (state.diagramBase64) {
+      const match = state.diagramBase64.match(/^data:(.+);base64,(.+)$/);
+      if (match) {
+        parts.push({
+          inlineData: {
+            mimeType: match[1],
+            data: match[2]
+          }
+        });
+        logToTerminal('Transmitting architecture diagram for multimodal analysis.', 'info');
+      }
+    }
+
+    const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ parts: [{ text: systemPrompt }] }] })
+      body: JSON.stringify({ contents: [{ parts }] })
     });
-    if (!response.ok) {
-      const errorJson = await response.json().catch(() => ({}));
-      throw new Error(errorJson?.error?.message || `HTTP ${response.status}`);
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.error?.message || `Gemini API returned HTTP ${res.status}`);
     }
-    const data = await response.json();
-    responseText = data.candidates[0].content.parts[0].text;
+
+    const data = await res.json();
+    rawOutput = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
   } else {
-    const url = 'https://api.openai.com/v1/chat/completions';
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${state.apiKey}`
-      },
-      body: JSON.stringify({
-        model: state.apiModel,
-        messages: [{ role: 'user', content: systemPrompt }]
-      })
-    });
-    if (!response.ok) {
-      const errorJson = await response.json().catch(() => ({}));
-      throw new Error(errorJson?.error?.message || `HTTP ${response.status}`);
+    // OpenAI-compatible endpoint (NVIDIA NIM, Groq, OpenRouter, OpenAI, Ollama, Custom)
+    const url = `${state.apiBaseUrl.replace(/\/+$/, '')}/chat/completions`;
+
+    const headers = {
+      'Content-Type': 'application/json'
+    };
+
+    if (state.apiKey) {
+      headers['Authorization'] = `Bearer ${state.apiKey}`;
     }
-    const data = await response.json();
-    responseText = data.choices[0].message.content;
+
+    if (provider === 'openrouter') {
+      headers['HTTP-Referer'] = 'https://github.com/gvbytes/threatmind-ai';
+      headers['X-Title'] = 'ThreatMind AI';
+    }
+
+    const userContent = [];
+    userContent.push({ type: 'text', text: systemInstruction });
+
+    // Handle image if vision model
+    if (state.diagramBase64 && (state.apiModel.includes('4o') || state.apiModel.includes('vision') || state.apiModel.includes('vl'))) {
+      userContent.push({
+        type: 'image_url',
+        image_url: { url: state.diagramBase64 }
+      });
+      logToTerminal('Transmitting architecture diagram for vision evaluation.', 'info');
+    }
+
+    const bodyPayload = {
+      model: state.apiModel,
+      messages: [
+        {
+          role: 'user',
+          content: userContent.length === 1 ? systemInstruction : userContent
+        }
+      ],
+      temperature: 0.2
+    };
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(bodyPayload)
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.error?.message || `API Provider returned HTTP ${res.status}`);
+    }
+
+    const data = await res.json();
+    rawOutput = data.choices?.[0]?.message?.content || '';
   }
 
-  const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-  let cleanText = jsonMatch ? jsonMatch[0] : responseText;
-  cleanText = cleanText.trim();
-  if (cleanText.startsWith('```')) {
-    cleanText = cleanText.replace(/^```[a-zA-Z]*\n?/, '').replace(/```$/, '').trim();
+  // Parse JSON response
+  const jsonMatch = rawOutput.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    throw new Error('AI engine did not return a valid JSON payload.');
   }
 
-  const parsed = JSON.parse(cleanText);
-  state.threats = parsed.threats || parsed.threat_model || [];
-  state.attackTree = parsed.attackTree || parsed.attack_tree || '';
-  state.abuseCases = parsed.abuseCases || parsed.abuse_cases || [];
-  
-  const rawControls = parsed.controls || parsed.security_controls || [];
-  state.controls = rawControls.map(c => ({ ...c, checked: false }));
+  const parsed = JSON.parse(jsonMatch[0]);
+
+  state.threats = (parsed.threats || []).map((t, idx) => ({
+    id: t.id || `T-AI-${idx + 1}`,
+    stride: t.stride || 'T',
+    title: t.title || 'Untitled Threat',
+    description: t.description || '',
+    component: t.component || 'System',
+    likelihood: parseInt(t.likelihood, 10) || 2,
+    impact: parseInt(t.impact, 10) || 2,
+    riskScore: (parseInt(t.likelihood, 10) || 2) * (parseInt(t.impact, 10) || 2),
+    mitigation: t.mitigation || ''
+  }));
+
+  state.attackTree = parsed.attackTree || generateMermaidTree();
+  state.abuseCases = parsed.abuseCases || [];
+  state.controls = (parsed.controls || []).map(c => ({
+    title: c.title || 'Mitigation Control',
+    description: c.description || '',
+    checked: false,
+    threatMap: c.threatMap || ''
+  }));
 }
 
-function renderTabContent() {
+// Render active tab content
+function renderActiveTab() {
   const container = document.getElementById('tabContent');
+  const filtersContainer = document.getElementById('tabFilters');
+  if (!container) return;
+
+  if (filtersContainer) {
+    filtersContainer.style.display = state.activeTab === 'stride' ? 'flex' : 'none';
+  }
+
   container.innerHTML = '';
-  
-  if (state.activeTab === 'stride') {
-    renderStrideTab(container);
-  } else if (state.activeTab === 'tree') {
-    renderTreeTab(container);
-  } else if (state.activeTab === 'abuse') {
-    renderAbuseTab(container);
-  } else if (state.activeTab === 'risk') {
-    renderRiskTab(container);
-  } else if (state.activeTab === 'controls') {
-    renderControlsTab(container);
+
+  switch (state.activeTab) {
+    case 'stride':
+      renderStrideTab(container);
+      break;
+    case 'tree':
+      renderAttackTreeTab(container);
+      break;
+    case 'abuse':
+      renderAbuseCasesTab(container);
+      break;
+    case 'risk':
+      renderRiskScorecardTab(container);
+      break;
+    case 'controls':
+      renderSecurityControlsTab(container);
+      break;
   }
 }
 
+// Tab: STRIDE Threats
 function renderStrideTab(container) {
-  container.innerHTML = `
-    <div class="card full-width">
-      <div class="card-title">
-        <div class="card-title-left">
-          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
-          STRIDE Model (Click text inline to edit)
-        </div>
+  let filtered = state.threats;
+
+  if (state.strideFilter !== 'all') {
+    filtered = filtered.filter(t => t.stride.toUpperCase() === state.strideFilter.toUpperCase());
+  }
+
+  if (state.severityFilter !== 'all') {
+    filtered = filtered.filter(t => calculateSeverity(t.riskScore) === state.severityFilter);
+  }
+
+  if (filtered.length === 0) {
+    container.innerHTML = `
+      <div style="text-align: center; padding: 2rem; color: var(--text-muted); font-size: 0.85rem;">
+        No threats matching the selected filter criteria.
       </div>
-      <div class="threats-list" id="threatsList"></div>
-    </div>
-  `;
-  
-  const list = document.getElementById('threatsList');
-  if (state.threats.length === 0) {
-    list.innerHTML = '<p style="color: var(--text-muted);">No threats generated.</p>';
+    `;
     return;
   }
 
-  state.threats.forEach((t, idx) => {
+  const grid = document.createElement('div');
+  grid.className = 'threat-grid';
+
+  filtered.forEach(threat => {
+    const sev = calculateSeverity(threat.riskScore);
     const item = document.createElement('div');
     item.className = 'threat-item';
-    
-    const riskScoreVal = t.riskScore || (t.likelihood * t.impact);
-    let rClass = riskScoreVal >= 6 ? 'risk-high' : (riskScoreVal >= 4 ? 'risk-medium' : 'risk-low');
-    let rLabel = riskScoreVal >= 6 ? 'High' : (riskScoreVal >= 4 ? 'Medium' : 'Low');
-
     item.innerHTML = `
-      <div class="threat-header" onclick="toggleThreatBody(this)">
-        <div class="threat-title-group">
-          <span class="stride-badge stride-${t.stride.toLowerCase()}">${t.stride}</span>
-          <span class="threat-title" contenteditable="true" onclick="event.stopPropagation()" onblur="saveInlineEdit(this, 'title', ${idx})">${t.title}</span>
+      <div class="threat-header">
+        <div class="threat-badges">
+          <span class="badge-stride badge-stride-${threat.stride.toLowerCase()}">${threat.stride} - ${STRIDE_NAMES[threat.stride] || 'STRIDE'}</span>
+          <span class="badge-severity badge-${sev}">${sev}</span>
+          <span class="threat-id">${threat.id}</span>
         </div>
-        <div class="threat-header-actions" onclick="event.stopPropagation()">
-          <span class="risk-pill ${rClass}">${rLabel}</span>
-          <button class="btn-small btn-small-danger" onclick="deleteThreat(${idx})">&times;</button>
-        </div>
+        <span style="font-size: 0.72rem; color: var(--text-faint); font-family: var(--font-mono);">${threat.component}</span>
       </div>
-      <div class="threat-body">
-        <p contenteditable="true" onblur="saveInlineEdit(this, 'description', ${idx})" style="margin-bottom: 1rem; padding:0.25rem; border-radius:4px;">${t.description}</p>
-        <div class="threat-meta-grid">
-          <div class="meta-item">
-            <h5>Target Component</h5>
-            <p contenteditable="true" onblur="saveInlineEdit(this, 'component', ${idx})">${t.component}</p>
-          </div>
-          <div class="meta-item">
-            <h5>Risk Level</h5>
-            <p>Likelihood (${t.likelihood}) x Impact (${t.impact}) = Score: ${riskScoreVal}</p>
-          </div>
-          <div class="meta-item" style="grid-column: span 2;">
-            <h5>Mitigation Control</h5>
-            <p contenteditable="true" onblur="saveInlineEdit(this, 'mitigation', ${idx})" style="color: var(--color-primary); padding:0.25rem; border-radius:4px;">${t.mitigation}</p>
-          </div>
-        </div>
+      <div class="threat-title" contenteditable="true" data-field="title" data-id="${threat.id}">${escapeHtml(threat.title)}</div>
+      <div class="threat-desc" contenteditable="true" data-field="description" data-id="${threat.id}">${escapeHtml(threat.description)}</div>
+      <div class="threat-mitigation">
+        <strong style="color: var(--text-primary); margin-right: 0.25rem;">Mitigation:</strong>
+        <span contenteditable="true" data-field="mitigation" data-id="${threat.id}">${escapeHtml(threat.mitigation)}</span>
+      </div>
+      <div class="threat-meta-row">
+        <span>Likelihood: ${threat.likelihood}/3</span>
+        <span>Impact: ${threat.impact}/3</span>
+        <span>Risk Score: <strong>${threat.riskScore}/9</strong></span>
       </div>
     `;
-    list.appendChild(item);
+
+    // Inline editing handlers
+    item.querySelectorAll('[contenteditable="true"]').forEach(el => {
+      el.addEventListener('blur', (e) => {
+        const field = e.target.getAttribute('data-field');
+        const threatId = e.target.getAttribute('data-id');
+        const targetThreat = state.threats.find(t => t.id === threatId);
+        if (targetThreat) {
+          targetThreat[field] = e.target.textContent.trim();
+        }
+      });
+    });
+
+    grid.appendChild(item);
   });
+
+  container.appendChild(grid);
 }
 
-window.toggleThreatBody = function(hdr) {
-  const body = hdr.nextElementSibling;
-  body.style.display = body.style.display === 'block' ? 'none' : 'block';
-};
+// Tab: Attack Tree
+function renderAttackTreeTab(container) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'mermaid-wrapper';
 
-window.saveInlineEdit = function(element, fieldKey, idx) {
-  const value = element.innerText.trim();
-  if (value) {
-    state.threats[idx][fieldKey] = value;
-    
-    if (fieldKey === 'mitigation') {
-      const ctrl = state.controls.find(c => c.threatMap === state.threats[idx].id);
-      if (ctrl) ctrl.description = value;
-    } else if (fieldKey === 'title') {
-      const ctrl = state.controls.find(c => c.threatMap === state.threats[idx].id);
-      if (ctrl) ctrl.title = `Mitigate ${value}`;
-    }
-    
-    logMessage(`Saved edit on threat field: "${fieldKey}"`, "info");
-    saveCurrentSessionState();
-  }
-};
+  const graphDiv = document.createElement('div');
+  graphDiv.className = 'mermaid';
+  graphDiv.textContent = state.attackTree;
 
-window.deleteThreat = function(idx) {
-  const t = state.threats[idx];
-  logMessage(`Removed threat vector: "${t.title}"`, "info");
-  state.controls = state.controls.filter(c => c.threatMap !== t.id);
-  state.threats.splice(idx, 1);
-  saveCurrentSessionState();
-  renderTabContent();
-};
+  wrapper.appendChild(graphDiv);
+  container.appendChild(wrapper);
 
-function renderTreeTab(container) {
-  container.innerHTML = `
-    <div class="card full-width">
-      <div class="card-title">Attack Tree Visualizer</div>
-      <div class="attack-tree-container">
-        <div class="mermaid" id="attackTreeMermaid">${state.attackTree}</div>
-      </div>
-    </div>
-  `;
   if (window.mermaid) {
-    try { window.mermaid.init(undefined, document.getElementById('attackTreeMermaid')); } 
-    catch (e) { console.error('Mermaid render error', e); }
+    try {
+      mermaid.run({ nodes: [graphDiv] });
+    } catch (e) {
+      console.warn('Mermaid render error:', e);
+      graphDiv.innerHTML = `<pre style="font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-muted);">${escapeHtml(state.attackTree)}</pre>`;
+    }
   }
 }
 
-function renderAbuseTab(container) {
-  container.innerHTML = `
-    <div class="card full-width">
-      <div class="card-title">Abuse Case Scenarios</div>
-      <div class="abuse-cases-grid" id="abuseCasesList"></div>
-    </div>
-  `;
-  const list = document.getElementById('abuseCasesList');
+// Tab: Abuse Cases
+function renderAbuseCasesTab(container) {
   if (state.abuseCases.length === 0) {
-    list.innerHTML = '<p style="color: var(--text-muted);">No abuse cases generated.</p>';
+    container.innerHTML = `
+      <div style="text-align: center; padding: 2rem; color: var(--text-muted); font-size: 0.85rem;">
+        No abuse cases registered.
+      </div>
+    `;
     return;
   }
-  state.abuseCases.forEach(ac => {
+
+  const grid = document.createElement('div');
+  grid.className = 'threat-grid';
+
+  state.abuseCases.forEach((ac, idx) => {
     const card = document.createElement('div');
-    card.className = 'abuse-card';
+    card.className = 'threat-item';
     card.innerHTML = `
-      <div class="abuse-header">
-        <span class="abuse-title">${ac.title}</span>
-        <span class="abuse-actor">${ac.actor}</span>
+      <div class="threat-header">
+        <div class="threat-badges">
+          <span class="badge-stride badge-stride-t">ABUSE CASE #${idx + 1}</span>
+        </div>
+        <span style="font-size: 0.72rem; color: var(--text-faint); font-family: var(--font-mono);">Actor: ${escapeHtml(ac.actor)}</span>
       </div>
-      <p class="abuse-desc">${ac.scenario}</p>
+      <div class="threat-title">${escapeHtml(ac.title)}</div>
+      <div class="threat-desc">${escapeHtml(ac.scenario)}</div>
     `;
-    list.appendChild(card);
-  });
-}
-
-function renderRiskTab(container) {
-  let high = 0, med = 0, low = 0;
-  state.threats.forEach(t => {
-    const score = t.riskScore || (t.likelihood * t.impact);
-    if (score >= 6) high++;
-    else if (score >= 4) med++;
-    else low++;
+    grid.appendChild(card);
   });
 
-  container.innerHTML = `
-    <div class="card risk-matrix-card">
-      <div class="card-title">Risk Scoring Grid</div>
-      <div class="risk-matrix">
-        <div class="matrix-label">Impact</div>
-        <div class="matrix-label">Low</div><div class="matrix-label">Medium</div><div class="matrix-label">High</div>
-        <div class="matrix-label">High (3)</div><div class="matrix-cell cell-med">3</div><div class="matrix-cell cell-high">6</div><div class="matrix-cell cell-high">9</div>
-        <div class="matrix-label">Med (2)</div><div class="matrix-cell cell-low">2</div><div class="matrix-cell cell-med">4</div><div class="matrix-cell cell-high">6</div>
-        <div class="matrix-label">Low (1)</div><div class="matrix-cell cell-low">1</div><div class="matrix-cell cell-low">2</div><div class="matrix-cell cell-med">3</div>
-      </div>
-    </div>
-    <div class="card">
-      <div class="card-title">Summary Metrics</div>
-      <div class="matrix-stat">
-        <div class="stat-item"><div class="stat-val color-h">${high}</div><div class="stat-lbl">High Risk</div></div>
-        <div class="stat-item"><div class="stat-val color-m">${med}</div><div class="stat-lbl">Medium Risk</div></div>
-        <div class="stat-item"><div class="stat-val color-l">${low}</div><div class="stat-lbl">Low Risk</div></div>
-      </div>
-    </div>
-  `;
+  container.appendChild(grid);
 }
 
-function renderControlsTab(container) {
-  container.innerHTML = `
-    <div class="card full-width">
-      <div class="card-title">Mitigations Checklist</div>
-      <div class="controls-list" id="controlsList"></div>
+// Tab: Risk Scorecard
+function renderRiskScorecardTab(container) {
+  const criticalCount = state.threats.filter(t => calculateSeverity(t.riskScore) === 'critical').length;
+  const highCount = state.threats.filter(t => calculateSeverity(t.riskScore) === 'high').length;
+  const mediumCount = state.threats.filter(t => calculateSeverity(t.riskScore) === 'medium').length;
+  const lowCount = state.threats.filter(t => calculateSeverity(t.riskScore) === 'low').length;
+
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.innerHTML = `
+    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem; text-align: center;">
+      <div style="background: var(--severity-critical-bg); border: 1px solid var(--severity-critical-border); padding: 1rem; border-radius: var(--radius-sm);">
+        <div style="font-size: 1.5rem; font-weight: 700; color: var(--severity-critical); font-family: var(--font-mono);">${criticalCount}</div>
+        <div style="font-size: 0.72rem; font-weight: 600; text-transform: uppercase; color: var(--severity-critical); margin-top: 0.25rem;">Critical Risks</div>
+      </div>
+      <div style="background: var(--severity-high-bg); border: 1px solid var(--severity-high-border); padding: 1rem; border-radius: var(--radius-sm);">
+        <div style="font-size: 1.5rem; font-weight: 700; color: var(--severity-high); font-family: var(--font-mono);">${highCount}</div>
+        <div style="font-size: 0.72rem; font-weight: 600; text-transform: uppercase; color: var(--severity-high); margin-top: 0.25rem;">High Risks</div>
+      </div>
+      <div style="background: var(--severity-medium-bg); border: 1px solid var(--severity-medium-border); padding: 1rem; border-radius: var(--radius-sm);">
+        <div style="font-size: 1.5rem; font-weight: 700; color: var(--severity-medium); font-family: var(--font-mono);">${mediumCount}</div>
+        <div style="font-size: 0.72rem; font-weight: 600; text-transform: uppercase; color: var(--severity-medium); margin-top: 0.25rem;">Medium Risks</div>
+      </div>
+      <div style="background: var(--severity-low-bg); border: 1px solid var(--severity-low-border); padding: 1rem; border-radius: var(--radius-sm);">
+        <div style="font-size: 1.5rem; font-weight: 700; color: var(--severity-low); font-family: var(--font-mono);">${lowCount}</div>
+        <div style="font-size: 0.72rem; font-weight: 600; text-transform: uppercase; color: var(--severity-low); margin-top: 0.25rem;">Low Risks</div>
+      </div>
+    </div>
+
+    <div style="font-size: 0.85rem; font-weight: 600; margin-bottom: 0.75rem;">Highest Impact Threat Vectors</div>
+    <div class="threat-grid">
+      ${state.threats.slice(0, 5).sort((a, b) => b.riskScore - a.riskScore).map(t => `
+        <div class="threat-item">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <strong>${escapeHtml(t.title)}</strong>
+            <span class="badge-severity badge-${calculateSeverity(t.riskScore)}">Score: ${t.riskScore}/9</span>
+          </div>
+          <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.25rem;">${escapeHtml(t.mitigation)}</div>
+        </div>
+      `).join('')}
     </div>
   `;
-  const list = document.getElementById('controlsList');
-  state.controls.forEach((c, idx) => {
+
+  container.appendChild(card);
+}
+
+// Tab: Security Controls
+function renderSecurityControlsTab(container) {
+  const implementedCount = state.controls.filter(c => c.checked).length;
+  const totalCount = state.controls.length;
+  const pct = totalCount > 0 ? Math.round((implementedCount / totalCount) * 100) : 0;
+
+  const summary = document.createElement('div');
+  summary.style.marginBottom = '1rem';
+  summary.innerHTML = `
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem; font-size: 0.8rem;">
+      <span style="color: var(--text-secondary);">Mitigation Implementation Progress</span>
+      <span style="font-family: var(--font-mono);">${implementedCount} / ${totalCount} (${pct}%)</span>
+    </div>
+    <div style="background: var(--bg-surface); height: 6px; border-radius: 3px; overflow: hidden; border: 1px solid var(--border-subtle);">
+      <div style="background: var(--severity-low); height: 100%; width: ${pct}%; transition: width 0.2s;"></div>
+    </div>
+  `;
+  container.appendChild(summary);
+
+  state.controls.forEach((ctrl, idx) => {
     const item = document.createElement('div');
     item.className = 'control-item';
     item.innerHTML = `
-      <input type="checkbox" class="control-checkbox" ${c.checked ? 'checked' : ''} onchange="toggleControl(${idx})">
-      <div class="control-info">
-        <div class="control-label"><span>${c.title}</span><span class="control-map">${c.threatMap}</span></div>
-        <p class="control-desc">${c.description}</p>
+      <input type="checkbox" id="ctrl_${idx}" ${ctrl.checked ? 'checked' : ''}>
+      <div class="control-content">
+        <label for="ctrl_${idx}" class="control-title" style="cursor: pointer;">${escapeHtml(ctrl.title)}</label>
+        <div class="control-desc">${escapeHtml(ctrl.description)}</div>
       </div>
     `;
-    list.appendChild(item);
+
+    item.querySelector('input').addEventListener('change', (e) => {
+      ctrl.checked = e.target.checked;
+      renderSecurityControlsTab(container);
+    });
+
+    container.appendChild(item);
   });
 }
 
-window.toggleControl = function(idx) {
-  state.controls[idx].checked = !state.controls[idx].checked;
-  saveCurrentSessionState();
-};
+// Multi-format export engine
+function exportReport(format) {
+  const timestamp = new Date().toISOString().split('T')[0];
+  const filename = `${state.projectName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-threat-model.${format === 'markdown' ? 'md' : format}`;
 
-function saveCurrentSessionState() {
-  if (!state.projectName) return;
-  const saved = JSON.parse(localStorage.getItem('threatmind_sessions') || '{}');
-  saved[state.projectName] = {
-    projectName: state.projectName,
-    projectDescription: state.projectDescription,
-    projectIdea: state.projectIdea,
-    components: state.components,
-    diagramBase64: state.diagramBase64,
-    threats: state.threats,
-    attackTree: state.attackTree,
-    abuseCases: state.abuseCases,
-    controls: state.controls
-  };
-  localStorage.setItem('threatmind_sessions', JSON.stringify(saved));
-  updateSessionsDropdown();
-}
+  let content = '';
+  let mimeType = 'text/plain';
 
-function loadSessionState(name) {
-  const saved = JSON.parse(localStorage.getItem('threatmind_sessions') || '{}');
-  const d = saved[name];
-  if (!d) return;
+  if (format === 'markdown') {
+    mimeType = 'text/markdown';
+    content = `# Threat Model: ${state.projectName}
 
-  state.projectName = d.projectName;
-  state.projectDescription = d.projectDescription;
-  state.projectIdea = d.projectIdea;
-  state.components = d.components || [];
-  state.diagramBase64 = d.diagramBase64;
-  state.threats = d.threats || [];
-  state.attackTree = d.attackTree || '';
-  state.abuseCases = d.abuseCases || [];
-  state.controls = d.controls || [];
+**Generated:** ${new Date().toUTCString()}  
+**Engine:** ${state.apiKey ? PROVIDER_CONFIGS[state.apiProvider]?.name : 'Offline Heuristics'}  
 
-  document.getElementById('projectName').value = state.projectName;
-  document.getElementById('projectDesc').value = state.projectDescription;
-  document.getElementById('projectIdea').value = state.projectIdea;
-  
-  if (state.diagramBase64) {
-    document.getElementById('previewImg').src = state.diagramBase64;
-    document.getElementById('previewContainer').style.display = 'block';
-    document.getElementById('uploadText').style.display = 'none';
-  } else {
-    document.getElementById('previewContainer').style.display = 'none';
-    document.getElementById('uploadText').style.display = 'block';
+## 1. System Overview
+${state.projectDescription || 'No description provided.'}
+
+### Constraints & Security Assumptions
+${state.projectIdea || 'None specified.'}
+
+---
+
+## 2. STRIDE Threat Catalog
+
+| ID | STRIDE | Component | Threat Title | Likelihood | Impact | Score | Mitigation |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+${state.threats.map(t => `| **${t.id}** | ${t.stride} (${STRIDE_NAMES[t.stride] || ''}) | ${t.component} | ${t.title} | ${t.likelihood}/3 | ${t.impact}/3 | **${t.riskScore}/9** | ${t.mitigation} |`).join('\n')}
+
+---
+
+## 3. Attack Tree
+
+\`\`\`mermaid
+${state.attackTree}
+\`\`\`
+
+---
+
+## 4. Adversary Abuse Scenarios
+
+${state.abuseCases.map((ac, idx) => `### Abuse Scenario ${idx + 1}: ${ac.title}
+- **Adversary Actor:** ${ac.actor}
+- **Attack Path:** ${ac.scenario}
+`).join('\n')}
+
+---
+
+## 5. Security Controls Checklist
+
+${state.controls.map(c => `- [${c.checked ? 'x' : ' '}] **${c.title}**: ${c.description}`).join('\n')}
+`;
+  } else if (format === 'json') {
+    mimeType = 'application/json';
+    content = JSON.stringify({
+      projectName: state.projectName,
+      generatedAt: new Date().toISOString(),
+      engine: state.apiKey ? state.apiProvider : 'offline_heuristics',
+      components: state.components,
+      threats: state.threats,
+      attackTree: state.attackTree,
+      abuseCases: state.abuseCases,
+      controls: state.controls
+    }, null, 2);
+  } else if (format === 'csv') {
+    mimeType = 'text/csv';
+    const rows = [
+      ['ID', 'STRIDE', 'Component', 'Title', 'Description', 'Likelihood', 'Impact', 'RiskScore', 'Mitigation']
+    ];
+    state.threats.forEach(t => {
+      rows.push([
+        t.id,
+        t.stride,
+        t.component,
+        `"${t.title.replace(/"/g, '""')}"`,
+        `"${t.description.replace(/"/g, '""')}"`,
+        t.likelihood,
+        t.impact,
+        t.riskScore,
+        `"${t.mitigation.replace(/"/g, '""')}"`
+      ]);
+    });
+    content = rows.map(r => r.join(',')).join('\n');
   }
-  renderComponentTags();
 
-  document.getElementById('welcomeScreen').style.display = 'none';
-  document.getElementById('dashboardOutput').style.display = 'block';
-  document.getElementById('btnExport').style.display = 'inline-flex';
-  document.getElementById('btnShowAddThreatModal').style.display = 'inline-flex';
-  
-  renderTabContent();
-  logMessage(`Loaded session: "${name}"`, "success");
-}
-
-function updateSessionsDropdown() {
-  const dd = document.getElementById('savedSessions');
-  if (!dd) return;
-  dd.innerHTML = '<option value="">-- Load Saved Session --</option>';
-  const saved = JSON.parse(localStorage.getItem('threatmind_sessions') || '{}');
-  Object.keys(saved).forEach(name => {
-    const opt = document.createElement('option');
-    opt.value = name; opt.innerText = name;
-    dd.appendChild(opt);
-  });
-}
-
-function exportToMarkdown() {
-  let md = `# Threat Modeling Report - ${state.projectName}\n\n`;
-  md += `**Date:** ${new Date().toLocaleDateString()}\n`;
-  md += `**Description:** ${state.projectDescription}\n`;
-  md += `**Components:** ${state.components.join(', ')}\n\n`;
-  md += `## 1. STRIDE Threats\n\n`;
-  md += `| ID | Category | Title | Component | Risk | Mitigation |\n|---|---|---|---|---|---|\n`;
-  state.threats.forEach(t => {
-    md += `| ${t.id} | ${t.stride} | ${t.title} | ${t.component} | ${t.riskScore} | ${t.mitigation} |\n`;
-  });
-  
-  md += `\n## 2. Attack Tree (Mermaid.js)\n\n\`\`\`mermaid\n${state.attackTree}\n\`\`\`\n`;
-  
-  const blob = new Blob([md], { type: 'text/markdown;charset=utf-8;' });
+  // Download blob
+  const blob = new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.setAttribute('href', url);
-  link.setAttribute('download', `${state.projectName.toLowerCase().replace(/\s+/g, '_')}_threat_model.md`);
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  logToTerminal(`Exported threat report to ${filename}`, 'success');
 }
-//Still developement is going on, and I can't gurantee how much time it will take for the full production level development. Still learning and developing this shitt.
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
