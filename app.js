@@ -1,9 +1,37 @@
 /**
- * ThreatMind AI - Threat Modeling & STRIDE Workbench
- * Production Core Logic
+ * ThreatMind AI - Threat Modeling & STRIDE Security Workbench
+ * Modern Monochrome Engine & Multi-Provider Architecture
  */
 
-// Provider definitions & defaults
+// Preset architecture templates
+const ARCHITECTURE_PRESETS = {
+  fintech: {
+    name: 'Payments Gateway & Settlement',
+    desc: 'Multi-tenant payments processing service handling credit card transactions and merchant settlement via external banking APIs.',
+    constraints: 'Must meet PCI-DSS Level 1 requirements. Mutual TLS between internal microservices. Data encrypted at rest using KMS keys.',
+    components: ['frontend', 'api', 'microservice', 'database', 'storage', 'auth']
+  },
+  genai: {
+    name: 'Autonomous AI Agent & RAG Stack',
+    desc: 'Multi-agent orchestration platform executing automated code synthesis, vector document retrieval, and external tool execution.',
+    constraints: 'OWASP Top 10 for LLMs compliance. Strict execution sandboxing for generated code. Prompt injection boundaries on external retrieval.',
+    components: ['frontend', 'api', 'llm', 'database', 'cache', 'storage', 'auth']
+  },
+  ecommerce: {
+    name: 'E-Commerce Platform & Mobile Store',
+    desc: 'High-traffic retail platform with mobile app storefront, shopping cart sessions, inventory catalog, and third-party payment checkout.',
+    constraints: 'High-availability during flash sales. Distributed session caching. Strict customer PII protection (GDPR/CCPA).',
+    components: ['frontend', 'mobile', 'api', 'cache', 'database', 'queue', 'storage']
+  },
+  cloud: {
+    name: 'Cloud Microservices & Event Mesh',
+    desc: 'Distributed microservices architecture communicating via asynchronous Kafka message brokers and centralized API Gateway.',
+    constraints: 'Zero-trust network architecture. Asynchronous event decoupling with dead-letter queue recovery.',
+    components: ['api', 'microservice', 'queue', 'database', 'nosql', 'cache', 'auth']
+  }
+};
+
+// Provider configurations
 const PROVIDER_CONFIGS = {
   nvidia: {
     name: 'NVIDIA NIM',
@@ -406,7 +434,7 @@ const state = {
   searchQuery: ''
 };
 
-// Console logger
+// Terminal Logger
 function logToTerminal(message, type = 'info') {
   const container = document.getElementById('consoleLogs');
   if (!container) return;
@@ -428,16 +456,17 @@ function calculateSeverity(riskScore) {
   return 'low';
 }
 
-// Initialize application
+// App Initialization
 document.addEventListener('DOMContentLoaded', () => {
   loadSavedSettings();
-  renderComponentTags();
+  setupComponentChips();
+  setupPresets();
   updateProviderIndicator();
   setupEventListeners();
   setupMermaid();
 
-  logToTerminal('ThreatMind AI Workbench initialized.', 'success');
-  logToTerminal(`Engine: ${state.apiKey ? PROVIDER_CONFIGS[state.apiProvider]?.name : 'Offline Heuristics'}`, 'info');
+  logToTerminal('ThreatMind Security Workbench ready.', 'success');
+  logToTerminal(`Inference Engine: ${state.apiKey ? PROVIDER_CONFIGS[state.apiProvider]?.name : 'Offline Heuristics'}`, 'info');
 });
 
 function setupMermaid() {
@@ -447,13 +476,13 @@ function setupMermaid() {
       theme: 'dark',
       themeVariables: {
         darkMode: true,
-        background: '#0f172a',
-        primaryColor: '#1e293b',
-        primaryTextColor: '#f8fafc',
-        primaryBorderColor: '#334155',
-        lineColor: '#64748b',
-        secondaryColor: '#1e293b',
-        tertiaryColor: '#0f172a'
+        background: '#121215',
+        primaryColor: '#18181b',
+        primaryTextColor: '#fafafa',
+        primaryBorderColor: '#3f3f46',
+        lineColor: '#71717a',
+        secondaryColor: '#18181b',
+        tertiaryColor: '#121215'
       }
     });
   }
@@ -483,56 +512,98 @@ function updateProviderIndicator() {
   if (state.apiKey) {
     const p = PROVIDER_CONFIGS[state.apiProvider];
     indicator.textContent = `${p?.name || state.apiProvider} (${state.apiModel})`;
-    dot.style.background = 'var(--accent-primary)';
+    dot.style.background = 'var(--text-primary)';
   } else {
     indicator.textContent = 'Offline Heuristics Engine';
     dot.style.background = 'var(--severity-low)';
   }
 }
 
-function renderComponentTags() {
-  const container = document.getElementById('componentTags');
-  if (!container) return;
+// Setup Architecture Presets
+function setupPresets() {
+  document.querySelectorAll('[data-preset]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const presetKey = btn.getAttribute('data-preset');
+      const preset = ARCHITECTURE_PRESETS[presetKey];
+      if (!preset) return;
 
-  container.innerHTML = '';
-  state.components.forEach(compKey => {
-    const compData = HEURISTICS[compKey];
-    if (!compData) return;
+      document.getElementById('projectName').value = preset.name;
+      document.getElementById('projectDesc').value = preset.desc;
+      document.getElementById('projectIdea').value = preset.constraints;
 
-    const tag = document.createElement('div');
-    tag.className = 'component-tag';
-    tag.innerHTML = `
-      <span>${compData.name}</span>
-      <span class="component-tag-remove" data-key="${compKey}">&times;</span>
-    `;
-    container.appendChild(tag);
-  });
+      state.projectName = preset.name;
+      state.projectDescription = preset.desc;
+      state.projectIdea = preset.constraints;
+      state.components = [...preset.components];
 
-  // Attach removal listeners
-  container.querySelectorAll('.component-tag-remove').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      const key = e.target.getAttribute('data-key');
-      state.components = state.components.filter(c => c !== key);
-      renderComponentTags();
+      syncComponentChips();
+      logToTerminal(`Loaded template preset: ${preset.name}`, 'info');
     });
   });
 }
 
-function setupEventListeners() {
-  // Add component button
-  const btnAddComp = document.getElementById('btnAddComp');
-  const compSelector = document.getElementById('compSelector');
-  if (btnAddComp && compSelector) {
-    btnAddComp.addEventListener('click', () => {
-      const selected = compSelector.value;
-      if (selected && !state.components.includes(selected)) {
-        state.components.push(selected);
-        renderComponentTags();
+// Setup Interactive Component Chips
+function setupComponentChips() {
+  const chips = document.querySelectorAll('.comp-toggle-chip');
+  chips.forEach(chip => {
+    chip.addEventListener('click', () => {
+      const compKey = chip.getAttribute('data-comp');
+      if (state.components.includes(compKey)) {
+        state.components = state.components.filter(c => c !== compKey);
+        chip.classList.remove('active');
+      } else {
+        state.components.push(compKey);
+        chip.classList.add('active');
       }
+      updateCompCountBadge();
     });
-  }
+  });
+  syncComponentChips();
+}
 
-  // Diagram upload
+function syncComponentChips() {
+  document.querySelectorAll('.comp-toggle-chip').forEach(chip => {
+    const compKey = chip.getAttribute('data-comp');
+    if (state.components.includes(compKey)) {
+      chip.classList.add('active');
+    } else {
+      chip.classList.remove('active');
+    }
+  });
+  updateCompCountBadge();
+}
+
+function updateCompCountBadge() {
+  const badge = document.getElementById('compCountBadge');
+  if (badge) {
+    badge.textContent = `${state.components.length} Selected`;
+  }
+}
+
+function updateMetricsBanner() {
+  const totalEl = document.getElementById('metricTotalThreats');
+  const critHighEl = document.getElementById('metricCritHigh');
+  const controlsEl = document.getElementById('metricControls');
+  const compEl = document.getElementById('metricComponents');
+
+  const total = state.threats.length;
+  const critHigh = state.threats.filter(t => {
+    const sev = calculateSeverity(t.riskScore);
+    return sev === 'critical' || sev === 'high';
+  }).length;
+
+  const implemented = state.controls.filter(c => c.checked).length;
+  const totalControls = state.controls.length;
+  const pct = totalControls > 0 ? Math.round((implemented / totalControls) * 100) : 0;
+
+  if (totalEl) totalEl.textContent = total;
+  if (critHighEl) critHighEl.textContent = critHigh;
+  if (controlsEl) controlsEl.textContent = `${pct}%`;
+  if (compEl) compEl.textContent = state.components.length;
+}
+
+function setupEventListeners() {
+  // Diagram Upload
   const uploadZone = document.getElementById('uploadZone');
   const architectureFile = document.getElementById('architectureFile');
   const previewContainer = document.getElementById('previewContainer');
@@ -554,7 +625,7 @@ function setupEventListeners() {
           previewImg.src = evt.target.result;
           previewContainer.style.display = 'block';
           uploadText.style.display = 'none';
-          logToTerminal(`Loaded architecture diagram: ${file.name} (${Math.round(file.size / 1024)} KB)`, 'info');
+          logToTerminal(`Ingested architecture diagram: ${file.name} (${Math.round(file.size / 1024)} KB)`, 'info');
         };
         reader.readAsDataURL(file);
       }
@@ -624,11 +695,11 @@ function setupEventListeners() {
 
       updateProviderIndicator();
       settingsModal.style.display = 'none';
-      logToTerminal(`Updated AI engine settings: ${state.apiProvider} (${state.apiModel})`, 'success');
+      logToTerminal(`Saved settings for ${state.apiProvider} (${state.apiModel})`, 'success');
     });
   }
 
-  // Add Custom Threat Modal
+  // Custom Threat Modal
   const btnShowAddThreat = document.getElementById('btnShowAddThreatModal');
   const addThreatModal = document.getElementById('addThreatModal');
   const addThreatClose = document.getElementById('addThreatModalClose');
@@ -678,14 +749,15 @@ function setupEventListeners() {
 
       addThreatModal.style.display = 'none';
       addThreatForm.reset();
+      updateMetricsBanner();
       renderActiveTab();
-      logToTerminal(`Added custom threat vector: ${title} (${uniqueId})`, 'info');
+      logToTerminal(`Recorded custom threat vector: ${title} (${uniqueId})`, 'info');
     });
   }
 
-  // Tabs navigation
+  // Tabs Navigation
   document.querySelectorAll('.tab').forEach(tabBtn => {
-    tabBtn.addEventListener('click', (e) => {
+    tabBtn.addEventListener('click', () => {
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
       tabBtn.classList.add('active');
       state.activeTab = tabBtn.getAttribute('data-tab');
@@ -693,7 +765,7 @@ function setupEventListeners() {
     });
   });
 
-  // Filter buttons
+  // Filter Buttons
   document.querySelectorAll('[data-filter-stride]').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('[data-filter-stride]').forEach(b => b.classList.remove('active'));
@@ -711,6 +783,15 @@ function setupEventListeners() {
       renderActiveTab();
     });
   });
+
+  // Threat search
+  const threatSearchInput = document.getElementById('threatSearchInput');
+  if (threatSearchInput) {
+    threatSearchInput.addEventListener('input', (e) => {
+      state.searchQuery = e.target.value.trim().toLowerCase();
+      renderActiveTab();
+    });
+  }
 
   // Export Dropdown
   const btnExportToggle = document.getElementById('btnExportToggle');
@@ -737,7 +818,7 @@ function setupEventListeners() {
   }
 }
 
-// Main generation pipeline
+// Execution Pipeline
 async function runThreatAnalysis() {
   const btnGenerate = document.getElementById('btnGenerate');
   const projectNameInput = document.getElementById('projectName');
@@ -749,12 +830,12 @@ async function runThreatAnalysis() {
   state.projectIdea = projectIdeaInput.value.trim();
 
   if (state.components.length === 0) {
-    logToTerminal('Please add at least one architecture node to audit.', 'warning');
+    logToTerminal('Please select at least one component to evaluate.', 'warning');
     return;
   }
 
   btnGenerate.disabled = true;
-  btnGenerate.textContent = 'Running Security Audit...';
+  btnGenerate.textContent = 'Analyzing System Architecture...';
   logToTerminal(`Beginning threat model synthesis for "${state.projectName}"...`, 'info');
 
   try {
@@ -764,14 +845,14 @@ async function runThreatAnalysis() {
       generateThreatModelOffline();
     }
 
-    // Display dashboard
     document.getElementById('welcomeScreen').style.display = 'none';
     document.getElementById('dashboardOutput').style.display = 'block';
     document.getElementById('btnShowAddThreatModal').style.display = 'inline-flex';
     document.getElementById('exportDropdown').style.display = 'inline-block';
 
+    updateMetricsBanner();
     renderActiveTab();
-    logToTerminal(`Threat model ready: ${state.threats.length} threats, ${state.abuseCases.length} abuse cases, ${state.controls.length} controls.`, 'success');
+    logToTerminal(`Analysis completed: ${state.threats.length} threats, ${state.abuseCases.length} abuse cases, ${state.controls.length} controls.`, 'success');
   } catch (error) {
     logToTerminal(`Threat analysis failed: ${error.message}`, 'error');
     console.error(error);
@@ -781,9 +862,9 @@ async function runThreatAnalysis() {
   }
 }
 
-// Offline heuristic generator
+// Offline Heuristic Generator
 function generateThreatModelOffline() {
-  logToTerminal('Using offline heuristic rules engine.', 'info');
+  logToTerminal('Executing offline heuristic rules engine.', 'info');
   state.threats = [];
   state.abuseCases = [];
   state.controls = [];
@@ -828,7 +909,7 @@ function generateThreatModelOffline() {
   state.attackTree = generateMermaidTree();
 }
 
-// Mermaid tree generator
+// Attack Tree Generator (Clean dark monochrome theme)
 function generateMermaidTree() {
   let tree = 'graph TD\n';
   tree += `  Target["Compromise ${state.projectName}"]\n`;
@@ -850,7 +931,7 @@ function generateMermaidTree() {
   return tree;
 }
 
-// AI generation pipeline (NVIDIA NIM / Groq / OpenRouter / Gemini / OpenAI / Ollama)
+// AI Generation (NVIDIA NIM / Groq / OpenRouter / Gemini / OpenAI / Ollama)
 async function generateThreatModelWithAI() {
   const provider = state.apiProvider;
   const config = PROVIDER_CONFIGS[provider] || PROVIDER_CONFIGS.custom;
@@ -882,7 +963,7 @@ JSON Schema:
       "mitigation": "Prescriptive technical remediation"
     }
   ],
-  "attackTree": "graph TD\\n  Root[\\\"Compromise System\\\"] --> NodeA[\\\"...\"]",
+  "attackTree": "graph TD\\n  Root[\\\"Compromise System\\\"] --> NodeA[\\\"...\\\"]",
   "abuseCases": [
     {
       "title": "Abuse Case Title",
@@ -902,7 +983,6 @@ JSON Schema:
   let rawOutput = '';
 
   if (provider === 'gemini') {
-    // Gemini generateContent API
     const url = `${state.apiBaseUrl}/v1beta/models/${state.apiModel}:generateContent?key=${state.apiKey}`;
     const parts = [{ text: systemInstruction }];
 
@@ -915,7 +995,7 @@ JSON Schema:
             data: match[2]
           }
         });
-        logToTerminal('Transmitting architecture diagram for multimodal analysis.', 'info');
+        logToTerminal('Transmitting architecture diagram for multimodal evaluation.', 'info');
       }
     }
 
@@ -933,7 +1013,7 @@ JSON Schema:
     const data = await res.json();
     rawOutput = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
   } else {
-    // OpenAI-compatible endpoint (NVIDIA NIM, Groq, OpenRouter, OpenAI, Ollama, Custom)
+    // OpenAI-compatible endpoints (NVIDIA NIM, Groq, OpenRouter, OpenAI, Ollama, Custom)
     const url = `${state.apiBaseUrl.replace(/\/+$/, '')}/chat/completions`;
 
     const headers = {
@@ -952,7 +1032,6 @@ JSON Schema:
     const userContent = [];
     userContent.push({ type: 'text', text: systemInstruction });
 
-    // Handle image if vision model
     if (state.diagramBase64 && (state.apiModel.includes('4o') || state.apiModel.includes('vision') || state.apiModel.includes('vl'))) {
       userContent.push({
         type: 'image_url',
@@ -987,10 +1066,10 @@ JSON Schema:
     rawOutput = data.choices?.[0]?.message?.content || '';
   }
 
-  // Parse JSON response
+  // Extract JSON payload
   const jsonMatch = rawOutput.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
-    throw new Error('AI engine did not return a valid JSON payload.');
+    throw new Error('AI engine did not return a parseable JSON payload.');
   }
 
   const parsed = JSON.parse(jsonMatch[0]);
@@ -1017,7 +1096,7 @@ JSON Schema:
   }));
 }
 
-// Render active tab content
+// Render Active Tab Content
 function renderActiveTab() {
   const container = document.getElementById('tabContent');
   const filtersContainer = document.getElementById('tabFilters');
@@ -1060,10 +1139,19 @@ function renderStrideTab(container) {
     filtered = filtered.filter(t => calculateSeverity(t.riskScore) === state.severityFilter);
   }
 
+  if (state.searchQuery) {
+    filtered = filtered.filter(t => 
+      t.title.toLowerCase().includes(state.searchQuery) ||
+      t.description.toLowerCase().includes(state.searchQuery) ||
+      t.mitigation.toLowerCase().includes(state.searchQuery) ||
+      t.component.toLowerCase().includes(state.searchQuery)
+    );
+  }
+
   if (filtered.length === 0) {
     container.innerHTML = `
-      <div style="text-align: center; padding: 2rem; color: var(--text-muted); font-size: 0.85rem;">
-        No threats matching the selected filter criteria.
+      <div style="text-align: center; padding: 2.5rem; color: var(--text-muted); font-size: 0.82rem;">
+        No threats matching current filter criteria.
       </div>
     `;
     return;
@@ -1075,11 +1163,11 @@ function renderStrideTab(container) {
   filtered.forEach(threat => {
     const sev = calculateSeverity(threat.riskScore);
     const item = document.createElement('div');
-    item.className = 'threat-item';
+    item.className = `threat-item severity-${sev}`;
     item.innerHTML = `
       <div class="threat-header">
         <div class="threat-badges">
-          <span class="badge-stride badge-stride-${threat.stride.toLowerCase()}">${threat.stride} - ${STRIDE_NAMES[threat.stride] || 'STRIDE'}</span>
+          <span class="badge-stride">${threat.stride} - ${STRIDE_NAMES[threat.stride] || 'STRIDE'}</span>
           <span class="badge-severity badge-${sev}">${sev}</span>
           <span class="threat-id">${threat.id}</span>
         </div>
@@ -1098,7 +1186,7 @@ function renderStrideTab(container) {
       </div>
     `;
 
-    // Inline editing handlers
+    // Inline edit handlers
     item.querySelectorAll('[contenteditable="true"]').forEach(el => {
       el.addEventListener('blur', (e) => {
         const field = e.target.getAttribute('data-field');
@@ -1142,8 +1230,8 @@ function renderAttackTreeTab(container) {
 function renderAbuseCasesTab(container) {
   if (state.abuseCases.length === 0) {
     container.innerHTML = `
-      <div style="text-align: center; padding: 2rem; color: var(--text-muted); font-size: 0.85rem;">
-        No abuse cases registered.
+      <div style="text-align: center; padding: 2.5rem; color: var(--text-muted); font-size: 0.82rem;">
+        No adversary abuse cases registered.
       </div>
     `;
     return;
@@ -1158,7 +1246,7 @@ function renderAbuseCasesTab(container) {
     card.innerHTML = `
       <div class="threat-header">
         <div class="threat-badges">
-          <span class="badge-stride badge-stride-t">ABUSE CASE #${idx + 1}</span>
+          <span class="badge-stride">SCENARIO #${idx + 1}</span>
         </div>
         <span style="font-size: 0.72rem; color: var(--text-faint); font-family: var(--font-mono);">Actor: ${escapeHtml(ac.actor)}</span>
       </div>
@@ -1181,29 +1269,29 @@ function renderRiskScorecardTab(container) {
   const card = document.createElement('div');
   card.className = 'card';
   card.innerHTML = `
-    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem; text-align: center;">
+    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; margin-bottom: 1.5rem; text-align: center;">
       <div style="background: var(--severity-critical-bg); border: 1px solid var(--severity-critical-border); padding: 1rem; border-radius: var(--radius-sm);">
         <div style="font-size: 1.5rem; font-weight: 700; color: var(--severity-critical); font-family: var(--font-mono);">${criticalCount}</div>
-        <div style="font-size: 0.72rem; font-weight: 600; text-transform: uppercase; color: var(--severity-critical); margin-top: 0.25rem;">Critical Risks</div>
+        <div style="font-size: 0.7rem; font-weight: 600; text-transform: uppercase; color: var(--severity-critical); margin-top: 0.2rem;">Critical</div>
       </div>
       <div style="background: var(--severity-high-bg); border: 1px solid var(--severity-high-border); padding: 1rem; border-radius: var(--radius-sm);">
         <div style="font-size: 1.5rem; font-weight: 700; color: var(--severity-high); font-family: var(--font-mono);">${highCount}</div>
-        <div style="font-size: 0.72rem; font-weight: 600; text-transform: uppercase; color: var(--severity-high); margin-top: 0.25rem;">High Risks</div>
+        <div style="font-size: 0.7rem; font-weight: 600; text-transform: uppercase; color: var(--severity-high); margin-top: 0.2rem;">High</div>
       </div>
       <div style="background: var(--severity-medium-bg); border: 1px solid var(--severity-medium-border); padding: 1rem; border-radius: var(--radius-sm);">
         <div style="font-size: 1.5rem; font-weight: 700; color: var(--severity-medium); font-family: var(--font-mono);">${mediumCount}</div>
-        <div style="font-size: 0.72rem; font-weight: 600; text-transform: uppercase; color: var(--severity-medium); margin-top: 0.25rem;">Medium Risks</div>
+        <div style="font-size: 0.7rem; font-weight: 600; text-transform: uppercase; color: var(--severity-medium); margin-top: 0.2rem;">Medium</div>
       </div>
       <div style="background: var(--severity-low-bg); border: 1px solid var(--severity-low-border); padding: 1rem; border-radius: var(--radius-sm);">
         <div style="font-size: 1.5rem; font-weight: 700; color: var(--severity-low); font-family: var(--font-mono);">${lowCount}</div>
-        <div style="font-size: 0.72rem; font-weight: 600; text-transform: uppercase; color: var(--severity-low); margin-top: 0.25rem;">Low Risks</div>
+        <div style="font-size: 0.7rem; font-weight: 600; text-transform: uppercase; color: var(--severity-low); margin-top: 0.2rem;">Low</div>
       </div>
     </div>
 
-    <div style="font-size: 0.85rem; font-weight: 600; margin-bottom: 0.75rem;">Highest Impact Threat Vectors</div>
+    <div style="font-size: 0.82rem; font-weight: 600; margin-bottom: 0.75rem; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.5px;">Highest Impact Threat Vectors</div>
     <div class="threat-grid">
       ${state.threats.slice(0, 5).sort((a, b) => b.riskScore - a.riskScore).map(t => `
-        <div class="threat-item">
+        <div class="threat-item severity-${calculateSeverity(t.riskScore)}">
           <div style="display: flex; justify-content: space-between; align-items: center;">
             <strong>${escapeHtml(t.title)}</strong>
             <span class="badge-severity badge-${calculateSeverity(t.riskScore)}">Score: ${t.riskScore}/9</span>
@@ -1217,7 +1305,7 @@ function renderRiskScorecardTab(container) {
   container.appendChild(card);
 }
 
-// Tab: Security Controls
+// Tab: Security Controls Checklist
 function renderSecurityControlsTab(container) {
   const implementedCount = state.controls.filter(c => c.checked).length;
   const totalCount = state.controls.length;
@@ -1226,11 +1314,11 @@ function renderSecurityControlsTab(container) {
   const summary = document.createElement('div');
   summary.style.marginBottom = '1rem';
   summary.innerHTML = `
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem; font-size: 0.8rem;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem; font-size: 0.78rem;">
       <span style="color: var(--text-secondary);">Mitigation Implementation Progress</span>
       <span style="font-family: var(--font-mono);">${implementedCount} / ${totalCount} (${pct}%)</span>
     </div>
-    <div style="background: var(--bg-surface); height: 6px; border-radius: 3px; overflow: hidden; border: 1px solid var(--border-subtle);">
+    <div style="background: var(--bg-surface-elevated); height: 6px; border-radius: 3px; overflow: hidden; border: 1px solid var(--border-subtle);">
       <div style="background: var(--severity-low); height: 100%; width: ${pct}%; transition: width 0.2s;"></div>
     </div>
   `;
@@ -1249,6 +1337,7 @@ function renderSecurityControlsTab(container) {
 
     item.querySelector('input').addEventListener('change', (e) => {
       ctrl.checked = e.target.checked;
+      updateMetricsBanner();
       renderSecurityControlsTab(container);
     });
 
@@ -1256,9 +1345,8 @@ function renderSecurityControlsTab(container) {
   });
 }
 
-// Multi-format export engine
+// Multi-Format Export Engine
 function exportReport(format) {
-  const timestamp = new Date().toISOString().split('T')[0];
   const filename = `${state.projectName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-threat-model.${format === 'markdown' ? 'md' : format}`;
 
   let content = '';
@@ -1341,7 +1429,6 @@ ${state.controls.map(c => `- [${c.checked ? 'x' : ' '}] **${c.title}**: ${c.desc
     content = rows.map(r => r.join(',')).join('\n');
   }
 
-  // Download blob
   const blob = new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');

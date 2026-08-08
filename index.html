@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ThreatMind AI - Security Threat Modeling & STRIDE Workbench</title>
-  <meta name="description" content="Automated STRIDE threat modeling, attack tree synthesis, and security control generation powered by NVIDIA NIM, local LLMs, and enterprise heuristics.">
+  <title>ThreatMind AI - Security Threat Modeling Workbench</title>
+  <meta name="description" content="Developer-first STRIDE threat modeling, attack trees, and security control generation powered by NVIDIA NIM, local LLMs, and enterprise heuristics.">
   <link rel="stylesheet" href="styles.css">
   <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 </head>
@@ -13,12 +13,11 @@
   <header>
     <div class="logo-container">
       <div class="logo-badge-icon">TM</div>
-      <div class="logo-text">ThreatMind <span>AI</span></div>
-      <div class="logo-tag">Threat Modeling Workbench</div>
+      <div class="logo-text">ThreatMind <span>Security Workbench</span></div>
     </div>
     
     <div class="header-actions">
-      <div class="provider-indicator" id="providerIndicator" title="Active Engine Configuration">
+      <div class="provider-indicator" id="providerIndicator" title="Active Inference Engine">
         <span class="status-dot" id="statusDot"></span>
         <span id="activeEngineText">Offline Heuristics</span>
       </div>
@@ -27,8 +26,8 @@
         + Custom Threat
       </button>
 
-      <button class="btn btn-secondary btn-icon" id="btnSettings" title="AI Engine & API Configuration">
-        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+      <button class="btn btn-secondary btn-icon" id="btnSettings" title="Inference Engine Settings">
+        <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
           <path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
           <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
         </svg>
@@ -36,15 +35,15 @@
 
       <div class="dropdown" id="exportDropdown" style="display: none;">
         <button class="btn btn-secondary" id="btnExportToggle">
-          <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
           </svg>
-          Export Report
+          Export
         </button>
         <div class="dropdown-menu" id="exportMenu">
-          <button class="dropdown-item" id="exportMarkdown">Markdown (.md)</button>
-          <button class="dropdown-item" id="exportJSON">JSON (.json)</button>
-          <button class="dropdown-item" id="exportCSV">CSV (.csv)</button>
+          <button class="dropdown-item" id="exportMarkdown">Markdown Report (.md)</button>
+          <button class="dropdown-item" id="exportJSON">Structured JSON (.json)</button>
+          <button class="dropdown-item" id="exportCSV">Risk Register CSV (.csv)</button>
         </div>
       </div>
     </div>
@@ -52,14 +51,20 @@
 
   <main>
     <div class="sidebar">
+      <!-- Quick Template Presets -->
       <div class="card">
         <div class="card-title">
-          <span>Project Scope</span>
-          <select id="savedSessions" class="form-select" style="width: auto; padding: 0.2rem 0.4rem; font-size: 0.72rem;"></select>
+          <span>Architecture Presets</span>
         </div>
-        
+        <div class="presets-bar">
+          <button class="preset-chip" data-preset="fintech">FinTech Payments</button>
+          <button class="preset-chip" data-preset="genai">AI Agent / LLM Stack</button>
+          <button class="preset-chip" data-preset="ecommerce">E-Commerce Web & App</button>
+          <button class="preset-chip" data-preset="cloud">Cloud Microservices</button>
+        </div>
+
         <div class="form-group">
-          <label class="form-label" for="projectName">Application / System Name</label>
+          <label class="form-label" for="projectName">Application / Scope Name</label>
           <input type="text" id="projectName" class="form-input" placeholder="e.g. Payments Gateway Microservice" value="Payments Gateway">
         </div>
         
@@ -74,35 +79,64 @@
         </div>
       </div>
       
+      <!-- Interactive Component Selection -->
       <div class="card">
         <div class="card-title">
-          <span>Architecture Nodes</span>
+          <span>Component Grid</span>
+          <span style="font-size: 0.7rem; color: var(--text-faint);" id="compCountBadge">6 Selected</span>
         </div>
-        <div class="form-group">
-          <label class="form-label" for="compSelector">Select Component</label>
-          <div style="display: flex; gap: 0.4rem;">
-            <select id="compSelector" class="form-select">
-              <option value="frontend">Web Frontend (SPA / React)</option>
-              <option value="mobile">Mobile Client (iOS / Android)</option>
-              <option value="api">API Gateway & Reverse Proxy</option>
-              <option value="microservice">Core Backend Microservice</option>
-              <option value="database">Relational Database (PostgreSQL / MySQL)</option>
-              <option value="nosql">NoSQL Database (MongoDB / DynamoDB)</option>
-              <option value="cache">In-Memory Cache (Redis)</option>
-              <option value="storage">Cloud Object Storage (S3 / Blob)</option>
-              <option value="auth">Identity Provider & Auth (OAuth2 / OIDC)</option>
-              <option value="queue">Message Broker (Kafka / RabbitMQ)</option>
-              <option value="llm">LLM & AI Agent Orchestrator</option>
-            </select>
-            <button class="btn btn-secondary" id="btnAddComp" style="padding: 0.45rem 0.75rem;">Add</button>
+        <div class="component-chip-grid" id="componentChipGrid">
+          <div class="comp-toggle-chip active" data-comp="frontend">
+            <span>Web Frontend</span>
+            <span class="chip-dot"></span>
           </div>
-          <div class="component-tags-container" id="componentTags"></div>
+          <div class="comp-toggle-chip" data-comp="mobile">
+            <span>Mobile Client</span>
+            <span class="chip-dot"></span>
+          </div>
+          <div class="comp-toggle-chip active" data-comp="api">
+            <span>API Gateway</span>
+            <span class="chip-dot"></span>
+          </div>
+          <div class="comp-toggle-chip active" data-comp="microservice">
+            <span>Microservices</span>
+            <span class="chip-dot"></span>
+          </div>
+          <div class="comp-toggle-chip active" data-comp="database">
+            <span>Relational SQL</span>
+            <span class="chip-dot"></span>
+          </div>
+          <div class="comp-toggle-chip" data-comp="nosql">
+            <span>NoSQL Database</span>
+            <span class="chip-dot"></span>
+          </div>
+          <div class="comp-toggle-chip" data-comp="cache">
+            <span>Redis Cache</span>
+            <span class="chip-dot"></span>
+          </div>
+          <div class="comp-toggle-chip active" data-comp="storage">
+            <span>Cloud S3 / Storage</span>
+            <span class="chip-dot"></span>
+          </div>
+          <div class="comp-toggle-chip active" data-comp="auth">
+            <span>OAuth2 / IdP</span>
+            <span class="chip-dot"></span>
+          </div>
+          <div class="comp-toggle-chip" data-comp="queue">
+            <span>Kafka / Queue</span>
+            <span class="chip-dot"></span>
+          </div>
+          <div class="comp-toggle-chip" data-comp="llm">
+            <span>AI Agent / LLM</span>
+            <span class="chip-dot"></span>
+          </div>
         </div>
       </div>
       
+      <!-- Architecture Diagram Ingestion -->
       <div class="card">
         <div class="card-title">
-          <span>Architecture Diagram (Optional)</span>
+          <span>Architecture Diagram</span>
         </div>
         <div class="upload-zone" id="uploadZone">
           <input type="file" id="architectureFile" style="display: none;" accept="image/*">
@@ -110,40 +144,41 @@
             <path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
           </svg>
           <div class="upload-text" id="uploadText">
-            <span>Choose diagram</span> or drag image here
+            <span>Upload Diagram</span> or drop file here
           </div>
           <div class="preview-container" id="previewContainer">
-            <img src="" alt="Architecture Diagram Preview" class="preview-img" id="previewImg">
+            <img src="" alt="Architecture Preview" class="preview-img" id="previewImg">
             <button class="btn-remove-preview" id="btnRemovePreview" title="Remove image">&times;</button>
           </div>
         </div>
-        <span class="helper-text">Supports PNG, JPG, or SVG architecture diagrams for multimodal vision analysis.</span>
+        <span class="helper-text">PNG, JPG, or SVG diagrams for multimodal vision evaluation.</span>
       </div>
       
-      <button class="btn btn-primary" id="btnGenerate" style="width: 100%; justify-content: center; padding: 0.65rem;">
+      <button class="btn btn-primary" id="btnGenerate" style="width: 100%; padding: 0.65rem;">
         Run Threat Analysis
       </button>
     </div>
     
     <div class="content-area">
+      <!-- Welcome Screen -->
       <div class="welcome-screen" id="welcomeScreen">
         <h2 class="welcome-title">Security Threat Modeling Workspace</h2>
         <p class="welcome-desc">
-          Automate STRIDE threat modeling, synthesize hierarchical attack trees, model adversary abuse cases, and generate verifiable security acceptance criteria.
+          Evaluate software architectures, synthesize hierarchical attack trees, model adversary abuse scenarios, and generate verifiable security acceptance criteria.
         </p>
         
         <div class="feature-grid">
           <div class="feature-box">
             <h4>STRIDE Classification</h4>
-            <p>Systematic categorizations across Spoofing, Tampering, Repudiation, Information Disclosure, Denial of Service, and Elevation of Privilege.</p>
+            <p>Spoofing, Tampering, Repudiation, Information Disclosure, Denial of Service, and Elevation of Privilege categorizations.</p>
           </div>
           <div class="feature-box">
             <h4>Attack Tree Synthesis</h4>
-            <p>Logical visualization of adversary compromise paths rendered directly using Mermaid.js graph syntax.</p>
+            <p>Logical visualization of adversary compromise paths rendered natively in dark-themed Mermaid.js graph syntax.</p>
           </div>
           <div class="feature-box">
             <h4>Adversary Abuse Scenarios</h4>
-            <p>Concrete operational abuse patterns mapping threat actor motives to system vulnerabilities.</p>
+            <p>Concrete operational abuse patterns mapping threat actor motives to specific component vulnerabilities.</p>
           </div>
           <div class="feature-box">
             <h4>Verification Controls</h4>
@@ -152,18 +187,42 @@
         </div>
       </div>
       
+      <!-- Threat Modeling Dashboard -->
       <div id="dashboardOutput" style="display: none;">
-        <div class="tabs">
-          <button class="tab active" data-tab="stride">STRIDE Threats</button>
-          <button class="tab" data-tab="tree">Attack Tree</button>
-          <button class="tab" data-tab="abuse">Abuse Cases</button>
-          <button class="tab" data-tab="risk">Risk Scorecard</button>
-          <button class="tab" data-tab="controls">Security Controls</button>
+        <!-- Metrics Banner -->
+        <div class="metrics-banner" id="metricsBanner">
+          <div class="metric-card">
+            <div class="metric-label">Identified Threats</div>
+            <div class="metric-value" id="metricTotalThreats">0</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Critical & High</div>
+            <div class="metric-value" style="color: var(--severity-critical);" id="metricCritHigh">0</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Controls Verified</div>
+            <div class="metric-value" style="color: var(--severity-low);" id="metricControls">0%</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Scoped Nodes</div>
+            <div class="metric-value" id="metricComponents">0</div>
+          </div>
         </div>
 
-        <div id="tabFilters" class="filter-bar" style="margin-top: 1rem;">
+        <div class="tabs-row">
+          <div class="tabs">
+            <button class="tab active" data-tab="stride">STRIDE Matrix</button>
+            <button class="tab" data-tab="tree">Attack Tree</button>
+            <button class="tab" data-tab="abuse">Abuse Cases</button>
+            <button class="tab" data-tab="risk">Risk Scorecard</button>
+            <button class="tab" data-tab="controls">Security Controls</button>
+          </div>
+        </div>
+
+        <!-- Filter Bar -->
+        <div id="tabFilters" class="filter-bar">
           <div class="filter-group">
-            <span style="font-size: 0.72rem; color: var(--text-faint); margin-right: 0.25rem;">STRIDE:</span>
+            <span class="filter-label">STRIDE:</span>
             <button class="filter-btn active" data-filter-stride="all">All</button>
             <button class="filter-btn" data-filter-stride="S">S</button>
             <button class="filter-btn" data-filter-stride="T">T</button>
@@ -174,21 +233,26 @@
           </div>
 
           <div class="filter-group">
-            <span style="font-size: 0.72rem; color: var(--text-faint); margin-right: 0.25rem;">Severity:</span>
+            <span class="filter-label">Severity:</span>
             <button class="filter-btn active" data-filter-severity="all">All</button>
             <button class="filter-btn" data-filter-severity="critical">Critical</button>
             <button class="filter-btn" data-filter-severity="high">High</button>
             <button class="filter-btn" data-filter-severity="medium">Medium</button>
             <button class="filter-btn" data-filter-severity="low">Low</button>
           </div>
+
+          <div>
+            <input type="text" id="threatSearchInput" class="search-input" placeholder="Search threats...">
+          </div>
         </div>
         
-        <div id="tabContent" style="margin-top: 0.75rem;"></div>
+        <div id="tabContent"></div>
       </div>
 
+      <!-- Terminal Log Console -->
       <div class="console-card">
         <div class="console-header">
-          <span>Security Analyst Terminal Log</span>
+          <span>Security Analyst Diagnostic Log</span>
           <span style="font-size: 0.65rem; color: var(--text-faint);">STATUS: READY</span>
         </div>
         <div class="console-logs" id="consoleLogs"></div>
@@ -200,18 +264,18 @@
   <div class="modal-overlay" id="settingsModal">
     <div class="modal-content">
       <button class="modal-close" id="modalClose">&times;</button>
-      <h3 class="modal-title">AI Engine Configuration</h3>
+      <h3 class="modal-title">AI Engine Settings</h3>
       <form id="settingsForm">
         <div class="form-group">
-          <label class="form-label" for="apiProvider">Inference Provider</label>
+          <label class="form-label" for="apiProvider">Inference Engine</label>
           <select id="apiProvider" class="form-select">
             <option value="nvidia">NVIDIA NIM (Free Credits at build.nvidia.com)</option>
-            <option value="groq">Groq Cloud (Ultra-Fast Free Tier)</option>
-            <option value="openrouter">OpenRouter (Free Models Available)</option>
+            <option value="groq">Groq Cloud (Fast Free Tier)</option>
+            <option value="openrouter">OpenRouter (Free Community Models)</option>
             <option value="gemini">Google Gemini AI</option>
             <option value="openai">OpenAI</option>
             <option value="ollama">Ollama (100% Offline & Private)</option>
-            <option value="custom">Custom OpenAI-Compatible API</option>
+            <option value="custom">Custom OpenAI-Compatible Endpoint</option>
           </select>
         </div>
 
@@ -221,21 +285,21 @@
         </div>
         
         <div class="form-group">
-          <label class="form-label" for="apiModel">Model Name</label>
+          <label class="form-label" for="apiModel">Model Identifier</label>
           <input type="text" id="apiModel" class="form-input" placeholder="meta/llama-3.3-70b-instruct">
           <span class="helper-text" id="modelHelpText">Recommended: meta/llama-3.3-70b-instruct or deepseek-ai/deepseek-r1</span>
         </div>
         
         <div class="form-group">
-          <label class="form-label" for="apiKey">API Key</label>
+          <label class="form-label" for="apiKey">API Access Key</label>
           <input type="password" id="apiKey" class="form-input" placeholder="Paste your API key">
           <span class="helper-text">
-            Keys are stored strictly in your browser's local storage and never leave your machine. Leave blank to run the offline Heuristics Engine.
+            Stored locally in your browser's localStorage. Leave blank to run offline Heuristics Mode.
           </span>
         </div>
         
-        <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center; margin-top: 1rem;">
-          Save Settings
+        <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 1rem;">
+          Save Engine Configuration
         </button>
       </form>
     </div>
@@ -245,7 +309,7 @@
   <div class="modal-overlay" id="addThreatModal">
     <div class="modal-content" style="max-width: 580px;">
       <button class="modal-close" id="addThreatModalClose">&times;</button>
-      <h3 class="modal-title">Record Custom Threat</h3>
+      <h3 class="modal-title">Record Custom Threat Vector</h3>
       <form id="addThreatForm">
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
           <div class="form-group">
@@ -260,19 +324,19 @@
             </select>
           </div>
           <div class="form-group">
-            <label class="form-label" for="customComponent">Target Component</label>
+            <label class="form-label" for="customComponent">Component Target</label>
             <input type="text" id="customComponent" class="form-input" placeholder="e.g. Auth Gateway" required>
           </div>
         </div>
 
         <div class="form-group">
           <label class="form-label" for="customTitle">Threat Title</label>
-          <input type="text" id="customTitle" class="form-input" placeholder="Brief descriptive threat title" required>
+          <input type="text" id="customTitle" class="form-input" placeholder="Concise title of vulnerability" required>
         </div>
 
         <div class="form-group">
-          <label class="form-label" for="customDesc">Vulnerability Description</label>
-          <textarea id="customDesc" class="form-textarea" placeholder="Explain how the vulnerability manifests and what asset is at risk..." required></textarea>
+          <label class="form-label" for="customDesc">Vulnerability Mechanics</label>
+          <textarea id="customDesc" class="form-textarea" placeholder="Explain the attack path and target asset..." required></textarea>
         </div>
 
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
@@ -295,12 +359,12 @@
         </div>
 
         <div class="form-group">
-          <label class="form-label" for="customMitigation">Mitigation Strategy</label>
-          <textarea id="customMitigation" class="form-textarea" placeholder="Specific technical countermeasure to neutralize this threat..." required></textarea>
+          <label class="form-label" for="customMitigation">Prescriptive Mitigation</label>
+          <textarea id="customMitigation" class="form-textarea" placeholder="Specific technical countermeasure..." required></textarea>
         </div>
 
-        <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center; margin-top: 0.5rem;">
-          Add Threat Vector
+        <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 0.5rem;">
+          Record Threat Vector
         </button>
       </form>
     </div>
